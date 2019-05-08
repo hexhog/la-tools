@@ -16,9 +16,9 @@ const ENTRY_B = -1
 
 type FactorSetting struct {
 	grouped       bool
-	factor_i      byte
-	index         byte // level index (1st level if part of group)
-	levelsInGroup byte // levels in group (1 if not a group)
+	factor_i      int8
+	index         int8 // level index (1st level if part of group)
+	levelsInGroup int8 // levels in group (1 if not a group)
 }
 
 type Mapping struct {
@@ -34,8 +34,8 @@ type Path struct {
 }
 
 type CSCol struct {
-	dataVector []float32       // column data
-	dataP      []float32       // pointer to the 1st vector element
+	dataVector []float64       // column data
+	dataP      []float64       // pointer to the 1st vector element
 	factors    int             // number of contributing factors
 	setting    []FactorSetting // column headers
 	coverable  bool
@@ -72,7 +72,7 @@ func newCSMatrix(locatingArray *LocatingArray) *CSMatrix {
 
 	// to be used when populating CSMatrix
 	var csCol *CSCol
-	var sum int
+	var sum float64
 
 	// get number of factors in locating array
 	factors := locatingArray.getFactors()
@@ -87,12 +87,12 @@ func newCSMatrix(locatingArray *LocatingArray) *CSMatrix {
 	csm.rows = locatingArray.getTests()
 
 	// initialize the data column vector
-	csm.data = make([]*CSCol)
+	csm.data = make([]*CSCol, 0)
 
 	// initialize (factor + level)-to-index map
 	csm.factorLevelMap = make([][]int, factors)
 	for factor_i := 0; factor_i < factors; factor_i++ {
-		factorLevelMap[factor_i] = make([]int, csm.groupingInfo[factor_i].levels)
+		csm.factorLevelMap[factor_i] = make([]int, csm.groupingInfo[factor_i].levels)
 	}
 
 	// initialize index-to-column map (to be populated later)
@@ -100,7 +100,7 @@ func newCSMatrix(locatingArray *LocatingArray) *CSMatrix {
 	csm.mapping.mappedTo = 0
 
 	// sum of squares of each column for normalization
-	sumOfSquares := make([]float32)
+	sumOfSquares := make([]float64, 0)
 
 	// populate compressive sensing matrix column by column
 	col_i := 0
@@ -110,11 +110,11 @@ func newCSMatrix(locatingArray *LocatingArray) *CSMatrix {
 	sum = 0
 
 	csCol.factors = 0
-	csCol.setting = make([]FactorSetting)
+	csCol.setting = make([]FactorSetting, 0)
 
 	// populate the intercept
 	for row_i := 0; row_i < csm.rows; row_i++ {
-		csm.addRow(csCol)
+		csm.addArray(csCol)
 		csCol.dataP[row_i] = ENTRY_A
 		sum += 1
 	}
@@ -127,9 +127,9 @@ func newCSMatrix(locatingArray *LocatingArray) *CSMatrix {
 	// go over all 1-way interactions
 	for factor_i := 0; factor_i < factors; factor_i++ {
 
-		for level_i := 0; level_i < groupingInfo[factor_i].levels; level_i++ {
+		for level_i := 0; level_i < csm.groupingInfo[factor_i].levels; level_i++ {
 
-			csm.addOneWayInteraction(factor_i, level_i, levelMatrix, sumOfSquares)
+			csm.addOneWayInteraction(factor_i, byte(level_i), levelMatrix, &sumOfSquares)
 
 			// set factor level map
 			csm.factorLevelMap[factor_i][level_i] = col_i - 1 // subtract 1 for INTERCEPT
@@ -143,32 +143,32 @@ func newCSMatrix(locatingArray *LocatingArray) *CSMatrix {
 	lastOneWay_i := col_i
 
 	// initialize 1st level mapping
-	mapping.mapping = make([]*Mapping, col_i-1)
+	csm.mapping.mapping = make([]*Mapping, col_i-1)
 
 	fmt.Println("Adding t-way interactions")
-	csm.addTWayInteractions(csCol, col_i-1, col_i, csm.locatingArray.getT(),
-		mapping.mapping, sumOfSquares, groupingInfo, levelMatrix)
+	csm.addTWayInteractions(csCol, col_i-1, &col_i, csm.locatingArray.getT(),
+		csm.mapping.mapping, &sumOfSquares, csm.groupingInfo, levelMatrix)
 
 	fmt.Println("Went over ", col_i, " columns")
 
 	// check coverability
 	for col_i := 0; col_i < csm.getCols(); col_i++ {
-		csCol = data[col_i]
+		csCol = csm.data[col_i]
 		csCol.coverable = csm.checkColumnCoverability(csCol)
 
 		if !csCol.coverable {
-			fmt.Println("Not coverable: ", getColName(csCol))
+			fmt.Println("Not coverable: ", csm.getColName(csCol))
 		}
 	}
 
 	// perform sqaure roots on sum of squares
 	for col_i := 0; col_i < csm.getCols(); col_i++ {
-		sumOfSquares[col_i] = sqrt(sumOfSquares[col_i])
+		sumOfSquares[col_i] = math.Sqrt(sumOfSquares[col_i])
 	}
 
 	// normalize all columns
 	for col_i := 0; col_i < csm.getCols(); col_i++ {
-		csCol = data[col_i]
+		csCol = csm.data[col_i]
 		for row_i := 0; row_i < csm.getRows(); row_i++ {
 			//	csCol->data[row_i] = csCol->data[row_i] / sumOfSquares[col_i];
 		}
@@ -182,18 +182,18 @@ func newCSMatrix(locatingArray *LocatingArray) *CSMatrix {
 
 func (csm *CSMatrix) addArray(csCol *CSCol) {
 	csCol.dataVector = append(csCol.dataVector, 0)
-	csCol.dataP = &csCol.dataVector[0]
+	csCol.dataP = csCol.dataVector
 }
 
 func (csm *CSMatrix) remArray(csCol *CSCol) {
 	csCol.dataVector = csCol.dataVector[:len(csCol.dataVector)-1]
-	csCol.dataP = &csCol.dataVector[0]
+	csCol.dataP = csCol.dataVector
 }
 
 func (csm *CSMatrix) addTWayInteractions(csColA *CSCol, colBMax_i int, col_i *int, t int,
-	mapping []*Mapping, sumOfSquares []*float32, groupingInfo []*GroupingInfo, levelMatrix [][]byte) {
+	mapping []*Mapping, sumOfSquares *[]float64, groupingInfo []*GroupingInfo, levelMatrix [][]int8) {
 	var csCol, csColB, csColC *CSCol
-	var sum int
+	var sum float64
 
 	// the offset is 1 for the INTERCEPT
 	colBOffset := 1
@@ -204,10 +204,10 @@ func (csm *CSMatrix) addTWayInteractions(csColA *CSCol, colBMax_i int, col_i *in
 	for colB_i := 0; colB_i < colBMax_i; colB_i++ {
 
 		// grab pointer to column
-		csColB = data[colB_i+colBOffset]
+		csColB = csm.data[colB_i+colBOffset]
 
 		// the next 2 lines move colCMax_i to the 1st column with the same factor as csColB
-		csColC = data[colCMax_i+colBOffset]
+		csColC = csm.data[colCMax_i+colBOffset]
 		if csColB.setting[0].factor_i > csColC.setting[0].factor_i {
 			colCMax_i = colB_i
 		}
@@ -218,21 +218,21 @@ func (csm *CSMatrix) addTWayInteractions(csColA *CSCol, colBMax_i int, col_i *in
 			mapping[colB_i].mapping = make([]*Mapping, colCMax_i)
 		}
 		if csColA.factors > 0 {
-			mapping[colB_i].mappedTo = col_i
+			mapping[colB_i].mappedTo = *col_i
 		} else {
 			mapping[colB_i].mappedTo = colB_i + colBOffset
 		}
 		groupMapping := mapping[colB_i]
 
-		colsInGroupB := 1
-		var groupIndexB byte = -1
+		var colsInGroupB int8 = 1
+		var groupIndexB int8 = -1
 		levelIndexB := csColB.setting[0].index
 
 		// check if this column is grouped
 		if groupingInfo[csColB.setting[0].factor_i].grouped {
 			groupIndexB = groupingInfo[csColB.setting[0].factor_i].levelGroups[levelIndexB]
 
-			for level_i := levelIndexB + 1; level_i < groupingInfo[csColB.setting[0].factor_i].levels &&
+			for level_i := levelIndexB + 1; int(level_i) < groupingInfo[csColB.setting[0].factor_i].levels &&
 				groupingInfo[csColB.setting[0].factor_i].levelGroups[level_i] == groupIndexB; level_i++ {
 
 				colsInGroupB++
@@ -248,18 +248,18 @@ func (csm *CSMatrix) addTWayInteractions(csColA *CSCol, colBMax_i int, col_i *in
 				}
 			}
 
-			csColB = data[colB_i+colBOffset]
+			csColB = csm.data[colB_i+colBOffset]
 		}
 
 		// create new column for CS Matrix
 		csCol = &CSCol{}
 		for row_i := 0; row_i < csm.rows; row_i++ {
-			csm.addRow(csCol)
+			csm.addArray(csCol)
 		}
 
 		// set the headers from the combining columns
 		csCol.factors = csColA.factors + 1
-		csCol.setting = male([]FactorSetting, csCol.factors)
+		csCol.setting = make([]FactorSetting, csCol.factors)
 
 		// copy previous factors
 		for setting_i := 0; setting_i < csColA.factors; setting_i++ {
@@ -273,16 +273,16 @@ func (csm *CSMatrix) addTWayInteractions(csColA *CSCol, colBMax_i int, col_i *in
 		csCol.setting[csColA.factors].levelsInGroup = colsInGroupB          // set last level if group
 
 		// populate the actual column data of CS matrix
-		sum = csm.populateColumnData(csCol, levelMatrix, 0, rows)
+		sum = csm.populateColumnData(csCol, levelMatrix, 0, csm.rows)
 
 		// add new CS column to matrix if needed
 		colAddedToMatrix := false
 		if csCol.factors > 1 {
 			// push into vector
-			data = append(data, csCol)
-			sumOfSquares = append(sumOfSquares, sum)
+			csm.data = append(csm.data, csCol)
+			*sumOfSquares = append(*sumOfSquares, sum)
 
-			col_i++
+			*col_i++
 
 			colAddedToMatrix = true
 		}
@@ -296,8 +296,8 @@ func (csm *CSMatrix) addTWayInteractions(csColA *CSCol, colBMax_i int, col_i *in
 	}
 }
 
-func (csm *CSMatrix) populateColumnData(csCol *CSCol, levelMatrix [][]byte, row_top int, row_len int) int {
-	sum := 0
+func (csm *CSMatrix) populateColumnData(csCol *CSCol, levelMatrix [][]int8, row_top int, row_len int) float64 {
+	var sum float64
 
 	// populate every row
 	var rowData bool // start with true, perform AND operation
@@ -307,10 +307,10 @@ func (csm *CSMatrix) populateColumnData(csCol *CSCol, levelMatrix [][]byte, row_
 
 		for setting_i := 0; setting_i < csCol.factors; setting_i++ {
 
-			rowData &= levelMatrix[row_i][csCol.setting[setting_i].factor_i] >=
-				csCol.setting[setting_i].index
+			rowData = rowData && (levelMatrix[row_i][csCol.setting[setting_i].factor_i] >=
+				csCol.setting[setting_i].index)
 
-			rowData &= levelMatrix[row_i][csCol.setting[setting_i].factor_i] <
+			rowData = rowData && levelMatrix[row_i][csCol.setting[setting_i].factor_i] <
 				csCol.setting[setting_i].index+csCol.setting[setting_i].levelsInGroup
 
 		}
@@ -330,13 +330,13 @@ func (csm *CSMatrix) populateColumnData(csCol *CSCol, levelMatrix [][]byte, row_
 }
 
 func (csm *CSMatrix) reorderRows(k, c int) {
-	var settingToResample *FactorSetting
+	var settingToResample []*FactorSetting
 	var nPaths int
 	var score int64
 	cols := csm.getCols()
 
 	// check advanced
-	array = make([]*CSCol, cols)
+	array := make([]*CSCol, cols)
 	for col_i := 0; col_i < cols; col_i++ {
 		array[col_i] = csm.data[col_i]
 	}
@@ -347,7 +347,7 @@ func (csm *CSMatrix) reorderRows(k, c int) {
 	tWayMin := csm.sortByTWayInteraction(array, coverableMin, csm.getCols()-1)
 	fmt.Println("t-way interactions begin at: ", tWayMin)
 
-	rowContributions = make([]int64, rows)
+	rowContributions := make([]int64, csm.rows)
 
 	path := &Path{}
 	path.min = coverableMin
@@ -362,8 +362,8 @@ func (csm *CSMatrix) reorderRows(k, c int) {
 
 		score = 0
 		settingToResample = nil
-		csm.pathLAChecker(array, path, path, 0, k, score, settingToResample, rowContributions)
-		csm.minCountCheck(array, c, score, settingToResample, rowContributions)
+		csm.pathLAChecker(array, path, path, 0, k, &score, settingToResample, rowContributions)
+		csm.minCountCheck(array, c, &score, settingToResample, rowContributions)
 
 		fmt.Println("Score: ", score)
 
@@ -387,7 +387,7 @@ func (csm *CSMatrix) reorderRows(k, c int) {
 					}
 				}
 
-				row_i1 = -1
+				row_i1 := -1
 				for row_i := 0; row_i < csm.rows; row_i++ {
 					if rowContributions[row_i2] > rowContributions[row_i] {
 						row_i1 = row_i
@@ -419,8 +419,8 @@ func (csm *CSMatrix) reorderRows(k, c int) {
 
 }
 
-func (csm *CSMatrix) minCountCheck(array **CSCol, c int, score *int64, settingToResample **FactorSetting,
-	rowContributions *int64) {
+func (csm *CSMatrix) minCountCheck(array []*CSCol, c int, score *int64, settingToResample []*FactorSetting,
+	rowContributions []int64) {
 	cols := csm.getCols()
 
 	count := make([]int, cols)
@@ -443,7 +443,7 @@ func (csm *CSMatrix) minCountCheck(array **CSCol, c int, score *int64, settingTo
 	for col_i := 0; col_i < cols; col_i++ {
 		if array[col_i].coverable && count[col_i] < c {
 			//			cout << "Below c requirement (" << count[col_i] << "): " << getColName(array[col_i]) << endl;
-			score += c - count[col_i]
+			*score += int64(c - count[col_i])
 			if settingToResample == nil {
 				// randomly choose a setting in the column to resample
 				settingToResample = &array[col_i].setting[rand.Intn(array[col_i].factors)]
@@ -1003,7 +1003,7 @@ func (csm *CSMatrix) randomizeRows(backupArray []*CSCol, array []*CSCol, csScore
 					csm.smartSort(array, row_top)
 					newCsScore = csm.getArrayScore(array)
 
-					var likelihood float32 = 10 / Pow(newCsScore/csScore, 10)
+					var likelihood float64 = 10 / Pow(newCsScore/csScore, 10)
 					fmt.Println("Rows: ", rows, " Iter: ", iter, ": ")
 					if newCsScore <= csScore { // || rand() % 100 < likelihood) {
 						fmt.Println(newCsScore, ": \t", csScore, " \tAccepted ", likelihood, "%")
@@ -1096,8 +1096,8 @@ func (csm *CSMatrix) getCol(col_i int) *CSCol {
 	return csm.data[col_i]
 }
 
-func (csm *CSMatrix) getDistanceToCol(col_i int, residuals *float32) float32 {
-	var distanceSum, subtractionResult float32
+func (csm *CSMatrix) getDistanceToCol(col_i int, residuals *float64) float64 {
+	var distanceSum, subtractionResult float64
 	csCol := data[col_i]
 
 	for row_i := 0; row_i < csm.rows; row_i++ {
@@ -1108,8 +1108,8 @@ func (csm *CSMatrix) getDistanceToCol(col_i int, residuals *float32) float32 {
 	return distanceSum
 }
 
-func (csm *CSMatrix) getProductWithCol(col_i int, residuals *float32) float32 {
-	var dotSum float32
+func (csm *CSMatrix) getProductWithCol(col_i int, residuals *float64) float64 {
+	var dotSum float64
 	csCol := data[col_i]
 
 	for row_i := 0; row_i < csm.rows; row_i++ {
@@ -1165,7 +1165,7 @@ func (csm *CSMatrix) getFactorLevelName(factor_i, level_i int) string {
 	return csm.factorData.getFactorLevelName(factor_i, level_i)
 }
 
-func (csm *CSMatrix) addOneWayInteraction(factor_i int, level_i byte, levelMatrix [][]byte, sumOfSquares []*float32) {
+func (csm *CSMatrix) addOneWayInteraction(factor_i int, level_i byte, levelMatrix [][]int8, sumOfSquares *[]float64) {
 	// create new column for CS Matrix
 	csCol := &CSCol{}
 	sum := 0
@@ -1195,7 +1195,7 @@ func (csm *CSMatrix) addOneWayInteraction(factor_i int, level_i byte, levelMatri
 
 	// push into vector
 	csm.data.push_back(csCol)
-	sumOfSquares.push_back(sum)
+	*sumOfSquares = append(*sumOfSquares, sum)
 }
 
 func (csm *CSMatrix) print() {
@@ -1220,7 +1220,7 @@ func (csm *CSMatrix) print() {
 	}
 }
 
-func (csm *CSMatrix) countOccurrences(csCol *CSCol, occurrence *Occurrence, minSetting_i int, magnitude float32) {
+func (csm *CSMatrix) countOccurrences(csCol *CSCol, occurrence *Occurrence, minSetting_i int, magnitude float64) {
 	if occurrence.list == nil {
 		return
 	}
@@ -1251,7 +1251,7 @@ func (csm *CSMatrix) swapColumns(array []*CSCol, col_i1 int, col_i2 int) {
 }
 
 func (csm *CSMatrix) swapRows(array []*CSCol, row_i1 int, row_i2 int) {
-	var tempData float32
+	var tempData float64
 	for col_i := 0; col_i < csm.getCols(); col_i++ {
 		tempData = array[col_i].dataP[row_i1]
 		array[col_i].dataP[row_i1] = array[col_i].dataP[row_i2]
@@ -2200,11 +2200,11 @@ func (csm *CSMatrix) getBruteForceArrayScore(array []*CSCol, k int) int64 {
 	return score
 }
 
-func (csm *CSMatrix) writeResponse(responseDir string, responseCol string, terms int, coefficients []float32, columns []int) {
+func (csm *CSMatrix) writeResponse(responseDir string, responseCol string, terms int, coefficients []float64, columns []int) {
 	fmt.Println(responseDir)
 
 	// initialize all responses to 0
-	responses := make([]float32, csm.rows)
+	responses := make([]float64, csm.rows)
 	for row_i := 0; row_i < csm.rows; row_i++ {
 		responses[row_i] = 0
 	}
