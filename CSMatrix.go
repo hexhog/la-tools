@@ -17,9 +17,9 @@ const ENTRY_B = -1
 
 type FactorSetting struct {
 	grouped       bool
-	factor_i      int8
-	index         int8 // level index (1st level if part of group)
-	levelsInGroup int8 // levels in group (1 if not a group)
+	factor_i      int
+	index         int // level index (1st level if part of group)
+	levelsInGroup int // levels in group (1 if not a group)
 }
 
 type Mapping struct {
@@ -192,7 +192,7 @@ func (csm *CSMatrix) remArray(csCol *CSCol) {
 }
 
 func (csm *CSMatrix) addTWayInteractions(csColA *CSCol, colBMax_i int, col_i *int, t int,
-	mapping []*Mapping, sumOfSquares *[]float64, groupingInfo []*GroupingInfo, levelMatrix [][]int8) {
+	mapping []*Mapping, sumOfSquares *[]float64, groupingInfo []*GroupingInfo, levelMatrix [][]int) {
 	var csCol, csColB, csColC *CSCol
 	var sum float64
 
@@ -225,8 +225,8 @@ func (csm *CSMatrix) addTWayInteractions(csColA *CSCol, colBMax_i int, col_i *in
 		}
 		groupMapping := mapping[colB_i]
 
-		var colsInGroupB int8 = 1
-		var groupIndexB int8 = -1
+		var colsInGroupB int = 1
+		var groupIndexB int = -1
 		levelIndexB := csColB.setting[0].index
 
 		// check if this column is grouped
@@ -297,7 +297,7 @@ func (csm *CSMatrix) addTWayInteractions(csColA *CSCol, colBMax_i int, col_i *in
 	}
 }
 
-func (csm *CSMatrix) populateColumnData(csCol *CSCol, levelMatrix [][]int8, row_top int, row_len int) float64 {
+func (csm *CSMatrix) populateColumnData(csCol *CSCol, levelMatrix [][]int, row_top int, row_len int) float64 {
 	var sum float64
 
 	// populate every row
@@ -580,8 +580,8 @@ func (csm *CSMatrix) autoFindRows(k, c, startRows int) {
 	lowerBound := 1
 
 	// check advanced
-	array := make([]*CSCol, csm.getCols())
-	for col_i := 0; col_i < csm.getCols(); col_i++ {
+	array := make([]*CSCol, cols)
+	for col_i := 0; col_i < cols; col_i++ {
 		array[col_i] = csm.data[col_i]
 	}
 
@@ -619,7 +619,7 @@ func (csm *CSMatrix) autoFindRows(k, c, startRows int) {
 			pathList.PushFront(path)
 
 			score = 0
-			csm.randomizePaths(array, &settingToResample, path, 0, k, c, &score, &pathList, iters)
+			csm.randomizePaths(array, &settingToResample, path, 0, k, c, &score, pathList, iters)
 
 			fmt.Println("Score: ", score)
 
@@ -634,9 +634,9 @@ func (csm *CSMatrix) autoFindRows(k, c, startRows int) {
 
 		// reset upper / lower bounds
 		if testPassed {
-			upperBound = rows
+			upperBound = csm.rows
 		} else {
-			lowerBound = rows + 1
+			lowerBound = csm.rows + 1
 		}
 
 		// check if the upper and lower bounds match
@@ -665,7 +665,7 @@ func (csm *CSMatrix) randomFix(k, c, totalRows int) {
 	cols := csm.getCols()
 
 	// check advanced
-	array = make([]*CSCol, cols)
+	array := make([]*CSCol, cols)
 	for col_i := 0; col_i < cols; col_i++ {
 		array[col_i] = csm.data[col_i]
 	}
@@ -679,7 +679,7 @@ func (csm *CSMatrix) randomFix(k, c, totalRows int) {
 	factors := csm.locatingArray.getFactors()
 	nPaths := 0
 	var score int64
-	settingToResample = *FactorSetting
+	var settingToResample *FactorSetting
 
 	path := &Path{}
 	path.min = coverableMin
@@ -692,9 +692,9 @@ func (csm *CSMatrix) randomFix(k, c, totalRows int) {
 	pathList.PushFront(path)
 
 	score = 0
-	csm.randomizePaths(array, settingToResample, path, 0, k, c, score, &pathList, iters)
+	csm.randomizePaths(array, &settingToResample, path, 0, k, c, &score, pathList, iters)
 
-	csm.minCountCheck(array, c, score, settingToResample, NULL)
+	csm.minCountCheck(array, c, &score, &settingToResample, nil)
 
 	fmt.Println("Score: ", score)
 
@@ -703,12 +703,12 @@ func (csm *CSMatrix) randomFix(k, c, totalRows int) {
 
 func (csm *CSMatrix) systematicRandomFix(k, c, initialRows, minChunk int) {
 	chunk := initialRows
-	finalizedRows := rows
+	finalizedRows := csm.rows
 	totalRows := (finalizedRows + chunk)
 	cols := csm.getCols()
 
 	// check advanced
-	array = make([]*CSCol, cols)
+	array := make([]*CSCol, cols)
 	for col_i := 0; col_i < cols; col_i++ {
 		array[col_i] = csm.data[col_i]
 	}
@@ -719,7 +719,7 @@ func (csm *CSMatrix) systematicRandomFix(k, c, initialRows, minChunk int) {
 	tWayMin := csm.sortByTWayInteraction(array, coverableMin, cols-1)
 	fmt.Println("t-way interactions begin at: ", tWayMin)
 
-	path = &Path{}
+	path := &Path{}
 	path.min = coverableMin
 	path.max = csm.getCols() - 1
 
@@ -727,17 +727,17 @@ func (csm *CSMatrix) systematicRandomFix(k, c, initialRows, minChunk int) {
 
 	nPaths := 0
 	csm.pathSort(array, path, 0, nPaths, &pathList)
-	fmt.Println("nPaths: ", nPaths, " of size ", sizeof(Path))
-	fmt.Println("Unfinished paths: ", pathList.size())
+	fmt.Println("nPaths: ", nPaths, " of size ", unsafe.Sizeof(path))
+	fmt.Println("Unfinished paths: ", pathList.Len())
 
 	var score int64
 
 	// grab initial time
 	start := time.Now()
 
-	settingToResample * FactorSetting
-	csm.pathLAChecker(array, path, path, 0, k, score, settingToResample, nil)
-	csm.minCountCheck(array, c, score, settingToResample, nil)
+	var settingToResample *FactorSetting
+	csm.pathLAChecker(array, path, path, 0, k, &score, &settingToResample, nil)
+	csm.minCountCheck(array, c, &score, &settingToResample, nil)
 
 	// check current time
 	elapsedTime := time.Since(start).Seconds()
@@ -749,8 +749,8 @@ func (csm *CSMatrix) systematicRandomFix(k, c, initialRows, minChunk int) {
 	for settingToResample != nil {
 		csm.resizeArray(array, totalRows)
 
-		csm.randomizePaths(array, settingToResample, path, finalizedRows, k, c, score, &pathList, 1000)
-		finalizedRows = rows
+		csm.randomizePaths(array, &settingToResample, path, finalizedRows, k, c, &score, pathList, 1000)
+		finalizedRows = csm.rows
 
 		chunk -= chunk / 2
 		if chunk < minChunk {
@@ -762,24 +762,25 @@ func (csm *CSMatrix) systematicRandomFix(k, c, initialRows, minChunk int) {
 }
 
 func (csm *CSMatrix) randomizePaths(array []*CSCol, settingToResample **FactorSetting, path *Path, row_top int,
-	k int, c int, score *int64, pathList *List, iters int) {
-	cols := getCols()
+	k int, c int, score *int64, pathList *list.List, iters int) {
+	cols := csm.getCols()
 	var newScore int64
-	var factor_i, nPaths int
+	var nPaths int
+	var factor_i int
 	var conGroup *ConstraintGroup
 	levelMatrix := csm.locatingArray.getLevelMatrix()
 	factors := csm.locatingArray.getFactors()
 
 	// custom factors to resample
 	nCustomFactors := 0
-	customFactorIndeces = make([]int, nCustomFactors)
+	customFactorIndeces := make([]int, nCustomFactors)
 	//	customFactorIndeces[0] = 16;
 	//	customFactorIndeces[1] = 17;
 
 	// allocate memory for saving old levels of locating array
-	oldLevels = make([][]byte, rows)
-	for row_i := 0; row_i < rows; row_i++ {
-		oldLevels[row_i] = make([]byte, factors)
+	oldLevels := make([][]int, csm.rows)
+	for row_i := 0; row_i < csm.rows; row_i++ {
+		oldLevels[row_i] = make([]int, factors)
 	}
 
 	// sort paths
@@ -792,22 +793,22 @@ func (csm *CSMatrix) randomizePaths(array []*CSCol, settingToResample **FactorSe
 	*score = 0
 	settingToResample = nil
 	csm.pathLAChecker(array, path, path, 0, k, score, settingToResample, nil)
-	csm.minCountCheck(array, c, score, settingToResample, NULL)
-	fmt.Println("Score: ", score, endl)
+	csm.minCountCheck(array, c, score, settingToResample, nil)
+	fmt.Println("Score: ", score)
 
-	for iter := 0; iter < iters && score > 0; iter++ {
+	for iter := 0; iter < iters && *score > 0; iter++ {
 
 		// ensure we recieved an actual setting
 		if settingToResample == nil {
-			fmt.Println("No resampleable setting was found", endl)
+			fmt.Println("No resampleable setting was found")
 			break
 		}
 
 		// get factors to resample (all factors in constraint group if one exists)
-		conGroup = csm.groupingInfo[settingToResample.factor_i].conGroup
+		conGroup = csm.groupingInfo[(*settingToResample).factor_i].conGroup
 		if conGroup == nil {
 			// get factor to resample
-			factor_i = settingToResample.factor_i
+			factor_i = (*settingToResample).factor_i
 
 			// resample locating array
 			for row_i := row_top; row_i < csm.rows; row_i++ {
@@ -819,7 +820,7 @@ func (csm *CSMatrix) randomizePaths(array []*CSCol, settingToResample **FactorSe
 
 			// repopulate columns of CS matrix
 			for level_i := 0; level_i < csm.groupingInfo[factor_i].levels; level_i++ {
-				csm.repopulateColumns2(factor_i, level_i, row_top, rows-row_top)
+				csm.repopulateColumns2(factor_i, level_i, row_top, csm.rows-row_top)
 			}
 		} else if nCustomFactors > 0 {
 			for row_i := row_top; row_i < csm.rows; row_i++ {
@@ -828,7 +829,7 @@ func (csm *CSMatrix) randomizePaths(array []*CSCol, settingToResample **FactorSe
 				}
 				if rand.Intn(100) < 100 {
 					for factor_i := 0; factor_i < nCustomFactors; factor_i++ {
-						levelMatrix[row_i][customFactorIndeces[factor_i]] = rand.Intn(groupingInfo[customFactorIndeces[factor_i]].levels)
+						levelMatrix[row_i][customFactorIndeces[factor_i]] = rand.Intn(csm.groupingInfo[customFactorIndeces[factor_i]].levels)
 					}
 				}
 			}
@@ -836,7 +837,7 @@ func (csm *CSMatrix) randomizePaths(array []*CSCol, settingToResample **FactorSe
 			// repopulate columns of CS matrix for every factor in constraint group and for each level
 			for factor_i := 0; factor_i < nCustomFactors; factor_i++ {
 				for level_i := 0; level_i < csm.groupingInfo[customFactorIndeces[factor_i]].levels; level_i++ {
-					csm.repopulateColumns2(customFactorIndeces[factor_i], level_i, row_top, rows-row_top)
+					csm.repopulateColumns2(customFactorIndeces[factor_i], level_i, row_top, csm.rows-row_top)
 				}
 			}
 		} else {
@@ -851,8 +852,8 @@ func (csm *CSMatrix) randomizePaths(array []*CSCol, settingToResample **FactorSe
 
 			// repopulate columns of CS matrix for every factor in constraint group and for each level
 			for factor_i := 0; factor_i < conGroup.factors; factor_i++ {
-				for level_i := 0; level_i < groupingInfo[conGroup.factorIndeces[factor_i]].levels; level_i++ {
-					csm.repopulateColumns2(conGroup.factorIndeces[factor_i], level_i, row_top, rows-row_top)
+				for level_i := 0; level_i < csm.groupingInfo[conGroup.factorIndeces[factor_i]].levels; level_i++ {
+					csm.repopulateColumns2(conGroup.factorIndeces[factor_i], level_i, row_top, csm.rows-row_top)
 				}
 			}
 		}
@@ -869,27 +870,27 @@ func (csm *CSMatrix) randomizePaths(array []*CSCol, settingToResample **FactorSe
 		//		cout << "Elapsed After Sort: " << elapsedTime << endl;
 
 		newScore = 0
-		newSettingToResample = *FactorSetting
+		var newSettingToResample *FactorSetting
 
 		// grab initial time
 		start = time.Now()
-		csm.pathLAChecker(array, path, path, 0, k, newScore, newSettingToResample, nil)
-		csm.minCountCheck(array, c, newScore, newSettingToResample, nil)
+		csm.pathLAChecker(array, path, path, 0, k, &newScore, &newSettingToResample, nil)
+		csm.minCountCheck(array, c, &newScore, &newSettingToResample, nil)
 		elapsedTime = time.Since(start).Seconds()
 		//		cout << "Elapsed After Checker: " << elapsedTime << endl;
 
-		if newScore <= score { // add "|| true" to cause every change to be implemented, not just improving changes
-			fmt.Println("Rows: ", rows, " Iter: ", iter, ": ")
-			fmt.Println(newScore, ": \t", score, " \tAccepted ")
-			settingToResample = newSettingToResample
-			score = newScore
+		if newScore <= *score { // add "|| true" to cause every change to be implemented, not just improving changes
+			fmt.Println("Rows: ", csm.rows, " Iter: ", iter, ": ")
+			fmt.Println(newScore, ": \t", *score, " \tAccepted ")
+			settingToResample = &newSettingToResample
+			*score = newScore
 		} else {
-			fmt.Println("Rows: ", rows, " Iter: ", iter, ": ")
-			fmt.Println(score, " \tMaintained ")
+			fmt.Println("Rows: ", csm.rows, " Iter: ", iter, ": ")
+			fmt.Println(*score, " \tMaintained ")
 
 			if conGroup == nil {
 				// get factor to resample
-				factor_i = settingToResample.factor_i
+				factor_i = (*settingToResample).factor_i
 
 				// rollback the change
 				for row_i := row_top; row_i < csm.rows; row_i++ {
@@ -897,8 +898,8 @@ func (csm *CSMatrix) randomizePaths(array []*CSCol, settingToResample **FactorSe
 				}
 
 				// repopulate columns of CS matrix
-				for level_i = 0; level_i < csm.groupingInfo[factor_i].levels; level_i++ {
-					csm.repopulateColumns2(factor_i, level_i, row_top, rows-row_top)
+				for level_i := 0; level_i < csm.groupingInfo[factor_i].levels; level_i++ {
+					csm.repopulateColumns2(factor_i, level_i, row_top, csm.rows-row_top)
 				}
 			} else if nCustomFactors > 0 {
 				for row_i := row_top; row_i < csm.rows; row_i++ {
@@ -910,12 +911,12 @@ func (csm *CSMatrix) randomizePaths(array []*CSCol, settingToResample **FactorSe
 				// repopulate columns of CS matrix for every factor in constraint group and for each level
 				for factor_i := 0; factor_i < nCustomFactors; factor_i++ {
 					for level_i := 0; level_i < csm.groupingInfo[customFactorIndeces[factor_i]].levels; level_i++ {
-						csm.repopulateColumns2(customFactorIndeces[factor_i], level_i, row_top, rows-row_top)
+						csm.repopulateColumns2(customFactorIndeces[factor_i], level_i, row_top, csm.rows-row_top)
 					}
 				}
 			} else {
 				// rollback the change
-				for row_i := row_top; row_i < rows; row_i++ {
+				for row_i := row_top; row_i < csm.rows; row_i++ {
 					for factor_i := 0; factor_i < conGroup.factors; factor_i++ {
 						levelMatrix[row_i][conGroup.factorIndeces[factor_i]] = oldLevels[row_i][conGroup.factorIndeces[factor_i]]
 					}
@@ -923,8 +924,8 @@ func (csm *CSMatrix) randomizePaths(array []*CSCol, settingToResample **FactorSe
 
 				// repopulate columns of CS matrix for every factor in constraint group and for each level
 				for factor_i := 0; factor_i < conGroup.factors; factor_i++ {
-					for level_i := 0; level_i < groupingInfo[conGroup.factorIndeces[factor_i]].levels; level_i++ {
-						csm.repopulateColumns2(conGroup.factorIndeces[factor_i], level_i, row_top, rows-row_top)
+					for level_i := 0; level_i < csm.groupingInfo[conGroup.factorIndeces[factor_i]].levels; level_i++ {
+						csm.repopulateColumns2(conGroup.factorIndeces[factor_i], level_i, row_top, csm.rows-row_top)
 					}
 				}
 			}
@@ -933,8 +934,9 @@ func (csm *CSMatrix) randomizePaths(array []*CSCol, settingToResample **FactorSe
 	}
 
 	// perform one last sort and save final unfinished paths to list
-	newPathList := List.New() // list <Path*>newPathList(*pathList);
-	pathList.init()           // newPathList
+	newPathList := list.New() // list <Path*>newPathList(*pathList);
+	newPathList.PushFrontList(pathList)
+	pathList = pathList.Init() // newPathList
 
 	// sort paths and recheck score
 	for e := newPathList.Front(); e != nil; e = e.Next() {
@@ -952,29 +954,30 @@ func (csm *CSMatrix) randomizePaths(array []*CSCol, settingToResample **FactorSe
 func (csm *CSMatrix) randomizeRows(backupArray []*CSCol, array []*CSCol, csScore *int64, row_top int, row_len int) {
 	cols := csm.getCols()
 	var newCsScore int64
-	var factor_i, resampleFactor int
+	var factor_i int
+	var resampleFactor int
 
 	var settingToResample *FactorSetting
 
 	levelMatrix := csm.locatingArray.getLevelMatrix()
 
-	oldLevels := make([]byte, rows)
+	oldLevels := make([]int, csm.rows)
 
 	csm.smartSort(array, row_top)
-	csScore = csm.getArrayScore(array)
+	*csScore = csm.getArrayScore(array)
 
 	fmt.Println("Score: ", csScore)
 
 	for iter := 0; iter < 1000; {
 
-		if csScore <= 0 {
+		if *csScore <= 0 {
 			break
 		}
 
 		for col_i := 0; col_i < cols-1; col_i++ {
 
 			// check if the streak ended
-			if csm.compare(array[col_i], array[col_i+1], 0, rows) == 0 {
+			if csm.compare(array[col_i], array[col_i+1], 0, csm.rows) == 0 {
 
 				// copy to backup array
 				copy(backupArray, array)
@@ -1004,11 +1007,11 @@ func (csm *CSMatrix) randomizeRows(backupArray []*CSCol, array []*CSCol, csScore
 					csm.smartSort(array, row_top)
 					newCsScore = csm.getArrayScore(array)
 
-					var likelihood float64 = 10 / Pow(newCsScore/csScore, 10)
-					fmt.Println("Rows: ", rows, " Iter: ", iter, ": ")
-					if newCsScore <= csScore { // || rand() % 100 < likelihood) {
+					var likelihood float64 = 10 / math.Pow(float64(newCsScore/(*csScore)), 10)
+					fmt.Println("Rows: ", csm.rows, " Iter: ", iter, ": ")
+					if newCsScore <= *csScore { // || rand() % 100 < likelihood) {
 						fmt.Println(newCsScore, ": \t", csScore, " \tAccepted ", likelihood, "%")
-						csScore = newCsScore
+						*csScore = newCsScore
 						break
 					} else {
 						// rollback the change
@@ -1016,7 +1019,7 @@ func (csm *CSMatrix) randomizeRows(backupArray []*CSCol, array []*CSCol, csScore
 							levelMatrix[row_i][factor_i] = oldLevels[row_i]
 						}
 
-						for level_i := 0; level_i < groupingInfo[factor_i].levels; level_i++ {
+						for level_i := 0; level_i < csm.groupingInfo[factor_i].levels; level_i++ {
 							csm.repopulateColumns2(factor_i, level_i, row_top, row_len)
 						}
 
@@ -1029,7 +1032,7 @@ func (csm *CSMatrix) randomizeRows(backupArray []*CSCol, array []*CSCol, csScore
 
 				break
 
-			} else if csm.compare(array[col_i], array[col_i+1], 0, rows) > 0 {
+			} else if csm.compare(array[col_i], array[col_i+1], 0, csm.rows) > 0 {
 				fmt.Println("Mistake in array")
 			}
 		}
@@ -1045,7 +1048,7 @@ func (csm *CSMatrix) repopulateColumns2(setFactor_i int, setLevel_i int, row_top
 }
 
 func (csm *CSMatrix) repopulateColumns(setFactor_i int, setLevel_i int, maxFactor_i int, t int,
-	mapping *Mapping, levelMatrix [][]byte, lastCol_i *int, row_top int, row_len int) {
+	mapping *Mapping, levelMatrix [][]int, lastCol_i *int, row_top int, row_len int) {
 
 	if setFactor_i > maxFactor_i && mapping.mappedTo != *lastCol_i {
 		populateColumnData(data[mapping.mappedTo], levelMatrix, row_top, row_len)
@@ -1166,7 +1169,7 @@ func (csm *CSMatrix) getFactorLevelName(factor_i, level_i int) string {
 	return csm.factorData.getFactorLevelName(factor_i, level_i)
 }
 
-func (csm *CSMatrix) addOneWayInteraction(factor_i int, level_i byte, levelMatrix [][]int8, sumOfSquares *[]float64) {
+func (csm *CSMatrix) addOneWayInteraction(factor_i int, level_i byte, levelMatrix [][]int, sumOfSquares *[]float64) {
 	// create new column for CS Matrix
 	csCol := &CSCol{}
 	sum := 0

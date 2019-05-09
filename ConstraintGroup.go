@@ -322,7 +322,7 @@ func (cg *ConstraintGroup) getResult(test int) bool {
 	return true
 }
 
-func (cg *ConstraintGroup) randPopulateLevelRow(levelRow []byte) {
+func (cg *ConstraintGroup) randPopulateLevelRow(levelRow []int) {
 	groupingInfo := cg.groupLA.getGroupingInfo()
 	levelMatrix := cg.groupLA.getLevelMatrix()
 

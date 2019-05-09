@@ -12,14 +12,14 @@ const laVersion = "v2.0"
 type GroupingInfo struct {
 	levels        int              // total levels for this factor
 	grouped       bool             //
-	levelGroups   []int8           //
+	levelGroups   []int            //
 	conGroup      *ConstraintGroup // constraint group to which this factor belongs
 	conGroupIndex int              // this factor's index in the constraint group above
 }
 
 type LocatingArray struct {
 	factorGrouping []*GroupingInfo
-	levels         [][]int8           // pointer to array of test levels (the main locating array)
+	levels         [][]int            // pointer to array of test levels (the main locating array)
 	tests          int                // count of tests in locating array
 	factors        int                // count of factors in locating array
 	t              int                // covers t-way interactions
@@ -197,7 +197,7 @@ func (l *LocatingArray) getGroupingInfo() []*GroupingInfo {
 	return l.factorGrouping
 }
 
-func (l *LocatingArray) getLevelMatrix() [][]int8 {
+func (l *LocatingArray) getLevelMatrix() [][]int {
 	return l.levels
 }
 
