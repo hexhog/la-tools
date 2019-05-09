@@ -3,13 +3,14 @@ package main
 import (
 	"fmt"
 	"log"
+	"math"
 )
 
 // QR and least squares workspace
 type WorkSpace struct {
-	dataQ   [][]float32
-	dataR   [][]float32
-	workVec []float32
+	dataQ   [][]float64
+	dataR   [][]float64
+	workVec []float64
 }
 
 type TermIndex struct {
@@ -17,26 +18,27 @@ type TermIndex struct {
 	next      *TermIndex
 }
 
-var workspace *WorkSpace // static
+var workSpace *WorkSpace // static
+
 // static: setup the global workspace
 func setupWorkSpace(rows, cols int) {
 	// allocate initial memory
 	workSpace = &WorkSpace{}
 
 	// allocate memory for Q
-	workSpace.dataQ = make([][]float32, rows)
+	workSpace.dataQ = make([][]float64, rows)
 	for row_i := 0; row_i < rows; row_i++ {
-		workSpace.dataQ[row_i] = make([]float32, cols)
+		workSpace.dataQ[row_i] = make([]float64, cols)
 	}
 
 	// allocate memory for R
-	workSpace.dataR = make([][]float32, cols)
+	workSpace.dataR = make([][]float64, cols)
 	for row_i := 0; row_i < cols; row_i++ {
-		workSpace.dataR[row_i] = make([]float32, cols)
+		workSpace.dataR[row_i] = make([]float64, cols)
 	}
 
 	// allocate memory for work vector
-	workSpace.workVec = make([]float32, rows)
+	workSpace.workVec = make([]float64, rows)
 }
 
 type Model struct {
@@ -46,10 +48,10 @@ type Model struct {
 	terms         int        // number of terms in the model
 	hTermIndex    *TermIndex // list with term indices
 	response      *VectorXf  // response vector (this is actual data from the response file)
-	modelResponse []float32  // actual response of the model
-	coefVec       []float32  // n by 1
-	resiVec       []float32  // m by 1
-	rSquared      float32
+	modelResponse []float64  // actual response of the model
+	coefVec       []float64  // n by 1
+	resiVec       []float64  // m by 1
+	rSquared      float64
 }
 
 // constructer - initialize the model
@@ -62,13 +64,13 @@ func newModel(response *VectorXf, maxTerms int, csMatrix *CSMatrix) *Model {
 	}
 
 	// allocate memory for the coefficients vector
-	m.coefVec = make([]float32, maxTerms)
+	m.coefVec = make([]float64, maxTerms)
 
 	// allocate memory for the residuals vector
-	m.resiVec = make([]float32, tests)
+	m.resiVec = make([]float64, m.tests)
 
 	// allocate memory for the model response
-	m.modelResponse = make([]float32, tests)
+	m.modelResponse = make([]float64, m.tests)
 
 	// add the intercept
 	m.terms = 1
@@ -78,6 +80,8 @@ func newModel(response *VectorXf, maxTerms int, csMatrix *CSMatrix) *Model {
 
 	// this is a one line way to get the same intercept above
 	m.leastSquares()
+
+	return m
 }
 
 // constructor - duplicate a model
@@ -92,21 +96,21 @@ func newDuplicateModel(model *Model) *Model {
 	}
 
 	// allocate memory for the coefficients vector and copy
-	coefVec := make([]float32, m.maxTerms)
-	for coef_i = 0; coef_i < m.maxTerms; coef_i++ {
+	coefVec := make([]float64, m.maxTerms)
+	for coef_i := 0; coef_i < m.maxTerms; coef_i++ {
 		coefVec[coef_i] = model.coefVec[coef_i]
 	}
 	m.coefVec = coefVec
 
 	// allocate memory for the residuals vector
-	resiVec := make([]float32, m.tests)
-	for resi_i = 0; resi_i < m.tests; resi_i++ {
+	resiVec := make([]float64, m.tests)
+	for resi_i := 0; resi_i < m.tests; resi_i++ {
 		resiVec[resi_i] = model.resiVec[resi_i]
 	}
 	m.resiVec = resiVec
 
 	// allocate memory for the model response
-	modelResponse := make([]float32, m.tests)
+	modelResponse := make([]float64, m.tests)
 	for resp_i := 0; resp_i < m.tests; resp_i++ {
 		modelResponse[resp_i] = model.modelResponse[resp_i]
 	}
@@ -115,7 +119,7 @@ func newDuplicateModel(model *Model) *Model {
 	// copy term index list
 	destTermIndex := &m.hTermIndex
 	for pTermIndex := model.hTermIndex; pTermIndex != nil; pTermIndex = pTermIndex.next {
-		(*destTermIndex) = TermIndex{}
+		(*destTermIndex) = &TermIndex{}
 		(*destTermIndex).termIndex = pTermIndex.termIndex
 		(*destTermIndex).next = nil
 		destTermIndex = &(*destTermIndex).next
@@ -129,7 +133,7 @@ func (m *Model) printModelFactors() {
 	var factor1i, factor2i, level1, level2 int
 
 	// print out the number of terms
-	fmt.Println("Model with ", terms, " terms")
+	fmt.Println("Model with ", m.terms, " terms")
 
 	// print out the headers
 	fmt.Println("Coefficient | Term")
@@ -137,16 +141,16 @@ func (m *Model) printModelFactors() {
 
 	// print out each term
 	term_i := 0
-	for pTermIndex = m.hTermIndex; pTermIndex != nil; pTermIndex = pTermIndex.next {
+	for pTermIndex := m.hTermIndex; pTermIndex != nil; pTermIndex = pTermIndex.next {
 		// print out the coefficient
 		termIndex := pTermIndex.termIndex
 
 		// print out the factor names and level names
-		fmt.Println(coefVec[term_i+1], " | ", m.csMatrix.getColName(m.csMatrix.getCol(termIndex)))
+		fmt.Println(m.coefVec[term_i+1], " | ", m.csMatrix.getColName(m.csMatrix.getCol(termIndex)))
 	}
 
 	// calculate adjusted r-squared (terms - 2 to not include the intercept)
-	adjustedRSquared := 1 - (1-m.rSquared)*(m.tests-1)/(m.tests-m.terms-2)
+	adjustedRSquared := 1 - (1-m.rSquared)*(float64(m.tests)-1)/float64(m.tests-m.terms-2)
 
 	// print model r-squared
 	if m.rSquared == 1 {
@@ -180,11 +184,11 @@ func (m *Model) leastSquares() {
 		}
 
 		// subtract appropriate other vectors
-		var dotProd float32
+		var dotProd float64
 		for row_i := 0; row_i < col_i; row_i++ {
 			// find the dot product of A[:][col_i] and Q[:][row_i]
 			dotProd = 0
-			for dotrow_i = 0; dotrow_i < m.tests; dotrow_i++ {
+			for dotrow_i := 0; dotrow_i < m.tests; dotrow_i++ {
 				dotProd += csCol.dataP[dotrow_i] * workSpace.dataQ[dotrow_i][row_i]
 			}
 
@@ -203,18 +207,18 @@ func (m *Model) leastSquares() {
 		for dotrow_i := 0; dotrow_i < m.tests; dotrow_i++ {
 			dotProd += workSpace.workVec[dotrow_i] * workSpace.workVec[dotrow_i]
 		}
-		dotProd = sqrt(dotProd)
+		dotProd = math.Sqrt(dotProd)
 
 		// assign the dot product to the R matrix
 		workSpace.dataR[col_i][col_i] = dotProd
 
 		// assign the normalized column to Q
 		if dotProd == 0 {
-			for row_i = 0; row_i < m.tests; row_i++ {
+			for row_i := 0; row_i < m.tests; row_i++ {
 				workSpace.dataQ[row_i][col_i] = 0
 			}
 		} else {
-			for row_i = 0; row_i < m.tests; row_i++ {
+			for row_i := 0; row_i < m.tests; row_i++ {
 				workSpace.dataQ[row_i][col_i] = workSpace.workVec[row_i] / dotProd
 			}
 		}
@@ -267,7 +271,7 @@ func (m *Model) leastSquares() {
 	}
 
 	// We now have Rx = workVec but R is upper triangular (n by n)
-	var rowSolution float32
+	var rowSolution float64
 	for row_i := m.terms - 1; row_i >= 0; row_i-- {
 
 		// initialize row solution
@@ -275,14 +279,14 @@ func (m *Model) leastSquares() {
 
 		// subtract other parts of LHS of equation
 		for col_i := m.terms - 1; col_i > row_i; col_i-- {
-			rowSolution -= workSpace.dataR[row_i][col_i] * coefVec[col_i]
+			rowSolution -= workSpace.dataR[row_i][col_i] * m.coefVec[col_i]
 		}
 
 		// divide for final row solution
 		if workSpace.dataR[row_i][row_i] == 0 {
-			coefVec[row_i] = 0
+			m.coefVec[row_i] = 0
 		} else {
-			coefVec[row_i] = rowSolution / workSpace.dataR[row_i][row_i]
+			m.coefVec[row_i] = rowSolution / workSpace.dataR[row_i][row_i]
 		}
 
 	}
@@ -295,27 +299,27 @@ func (m *Model) leastSquares() {
 	//cout << endl;
 
 	// calculate residuals and r-squared
-	var SSres float32 = 0
+	var SSres float64 = 0
 	for row_i := 0; row_i < m.tests; row_i++ {
-		modelResponse[row_i] = 0
+		m.modelResponse[row_i] = 0
 	}
 
 	// find model response
 	pTermIndex = m.hTermIndex
 	for term_i := 0; term_i < m.terms; term_i++ {
-		csCol = csMatrix.getCol(pTermIndex.termIndex)
+		csCol = m.csMatrix.getCol(pTermIndex.termIndex)
 		for row_i := 0; row_i < m.tests; row_i++ {
-			modelResponse[row_i] += csCol.dataP[row_i] * coefVec[term_i]
+			m.modelResponse[row_i] += csCol.dataP[row_i] * m.coefVec[term_i]
 		}
 		pTermIndex = pTermIndex.next
 	}
 
 	// find residuals and SSres
 	for row_i := 0; row_i < m.tests; row_i++ {
-		resiVec[row_i] = responseData[row_i] - modelResponse[row_i]
+		m.resiVec[row_i] = responseData[row_i] - m.modelResponse[row_i]
 
 		// add the square of residual to SSres
-		SSres += resiVec[row_i] * resiVec[row_i]
+		SSres += m.resiVec[row_i] * m.resiVec[row_i]
 	}
 
 	// find r-squared
@@ -324,18 +328,18 @@ func (m *Model) leastSquares() {
 }
 
 // get the residuals vector for this model
-func (m *Model) getResiVec() []float32 {
+func (m *Model) getResiVec() []float64 {
 	return m.resiVec
 }
 
 // get r-squared
-func (m *Model) getRSquared() float32 {
+func (m *Model) getRSquared() float64 {
 	return m.rSquared
 }
 
 // check if term is part of the model
 func (m *Model) termExists(col_i int) bool {
-	for pTermIndex := m.hTermIndex; pTermIndex != NULL; pTermIndex = pTermIndex.next {
+	for pTermIndex := m.hTermIndex; pTermIndex != nil; pTermIndex = pTermIndex.next {
 		if pTermIndex.termIndex == col_i {
 			// term was found!
 			return true
@@ -347,7 +351,8 @@ func (m *Model) termExists(col_i int) bool {
 
 // add a term (col_i of csMatrix) to the model. Returns true if added successfully
 func (m *Model) addTerm(col_i int) bool {
-	for pTermIndex := &m.hTermIndex; *pTermIndex != nil; pTermIndex = &(*pTermIndex).next {
+	var pTermIndex **TermIndex
+	for pTermIndex = &m.hTermIndex; *pTermIndex != nil; pTermIndex = &(*pTermIndex).next {
 
 		if (*pTermIndex).termIndex == col_i {
 
@@ -371,7 +376,7 @@ func (m *Model) addTerm(col_i int) bool {
 	// create a new term index at the end
 	termIndex := &TermIndex{}
 	termIndex.termIndex = col_i
-	termIndex.next = nill
+	termIndex.next = nil
 	(*pTermIndex) = termIndex
 	m.terms++
 
@@ -418,8 +423,8 @@ func (m *Model) countOccurrences(occurrence *Occurrence) {
 // check if the model is a duplicate
 func (m *Model) isDuplicate(n *Model) bool {
 	// check if all terms match
-	p1TermIndex = m.hTermIndex
-	p2TermIndex = n.hTermIndex
+	p1TermIndex := m.hTermIndex
+	p2TermIndex := n.hTermIndex
 
 	for !(p1TermIndex == nil && p2TermIndex == nil) {
 		if p1TermIndex.termIndex != p2TermIndex.termIndex {

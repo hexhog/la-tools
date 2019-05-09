@@ -282,10 +282,10 @@ func (l *LocatingArray) writeToFile(filePath string) {
 	// write the tests now
 	levelMatrix := l.getLevelMatrix()
 	for test_i := 0; test_i < l.tests; test_i++ {
-		levelFactors := make([]byte, l.factors)
+		levelFactors := make([]string, l.factors)
 		// now write each factor level for this specific test
-		for factor_i = 0; factor_i < l.factors; factor_i++ {
-			levelFactors[factor_i] = levelMatrix[test_i][factor_i]
+		for factor_i := 0; factor_i < l.factors; factor_i++ {
+			levelFactors[factor_i] = string(levelMatrix[test_i][factor_i])
 		}
 		fmt.Fprintln(w, strings.Join(levelFactors, "\t"))
 	}

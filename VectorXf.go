@@ -6,9 +6,9 @@ import (
 
 type VectorXf struct {
 	length    int
-	data      []float32
+	data      []float64
 	usesSStot bool    // indicates whether SStot has been calculated
-	SStot     float32 // SStot for calculating r-squared
+	SStot     float64 // SStot for calculating r-squared
 }
 
 func NewVectorXf(length int) *VectorXf {
@@ -19,7 +19,7 @@ func NewVectorXf(length int) *VectorXf {
 	}
 }
 
-func (v *VectorXf) getData() []float32 {
+func (v *VectorXf) getData() []float64 {
 	return v.data
 }
 
@@ -31,7 +31,7 @@ func (v *VectorXf) calculateSStot() {
 	// calculate SStot for r-squared
 
 	// 1st get yBar
-	var yBar, ySum float32
+	var yBar, ySum float64
 	for row_i := 0; row_i < v.length; row_i++ {
 		ySum += v.data[row_i]
 	}
@@ -46,7 +46,7 @@ func (v *VectorXf) calculateSStot() {
 	v.usesSStot = true
 }
 
-func (v *VectorXf) getSStot() float32 {
+func (v *VectorXf) getSStot() float64 {
 	// verify SStot has been calculated
 	if !v.usesSStot {
 		fmt.Println("You have not calculated SStot yet")
