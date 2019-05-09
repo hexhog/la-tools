@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"os"
 	"time"
+	"unsafe"
 )
 
 const ENTRY_A = 1
@@ -361,9 +362,9 @@ func (csm *CSMatrix) reorderRows(k, c int) {
 		csm.pathSort(array, path, 0, nPaths, nil)
 
 		score = 0
-		settingToResample = nil
-		csm.pathLAChecker(array, path, path, 0, k, &score, settingToResample, rowContributions)
-		csm.minCountCheck(array, c, &score, settingToResample, rowContributions)
+		var settingToResample *FactorSetting
+		csm.pathLAChecker(array, path, path, 0, k, &score, &settingToResample, rowContributions)
+		csm.minCountCheck(array, c, &score, &settingToResample, rowContributions)
 
 		fmt.Println("Score: ", score)
 
@@ -419,7 +420,7 @@ func (csm *CSMatrix) reorderRows(k, c int) {
 
 }
 
-func (csm *CSMatrix) minCountCheck(array []*CSCol, c int, score *int64, settingToResample []*FactorSetting,
+func (csm *CSMatrix) minCountCheck(array []*CSCol, c int, score *int64, settingToResample **FactorSetting,
 	rowContributions []int64) {
 	cols := csm.getCols()
 
@@ -444,9 +445,9 @@ func (csm *CSMatrix) minCountCheck(array []*CSCol, c int, score *int64, settingT
 		if array[col_i].coverable && count[col_i] < c {
 			//			cout << "Below c requirement (" << count[col_i] << "): " << getColName(array[col_i]) << endl;
 			*score += int64(c - count[col_i])
-			if settingToResample == nil {
+			if *settingToResample == nil {
 				// randomly choose a setting in the column to resample
-				settingToResample = &array[col_i].setting[rand.Intn(array[col_i].factors)]
+				*settingToResample = &array[col_i].setting[rand.Intn(array[col_i].factors)]
 			}
 		}
 	}
@@ -455,8 +456,8 @@ func (csm *CSMatrix) minCountCheck(array []*CSCol, c int, score *int64, settingT
 
 func (csm *CSMatrix) exactFix() {
 	// create a work array
-	array = make([]*CSCol, cols)
-	for col_i := 0; col_i < cols; col_i++ {
+	array := make([]*CSCol, csm.getCols())
+	for col_i := 0; col_i < csm.getCols(); col_i++ {
 		array[col_i] = csm.data[col_i]
 	}
 
@@ -469,11 +470,11 @@ func (csm *CSMatrix) exactFix() {
 
 	if csm.locatingArray.getNConGroups() == 0 {
 		for score > 0 {
-			csm.addRowFix(array, score)
+			csm.addRowFix(array, &score)
 		}
 
 		fmt.Println("Complete LA created with score: ", score)
-		fmt.Println("Rows: ", getRows())
+		fmt.Println("Rows: ", csm.getRows())
 	} else {
 		fmt.Println("Unable to perform fixla because constraints were found. Remove the constraints to perform this operation!")
 	}
@@ -482,12 +483,12 @@ func (csm *CSMatrix) exactFix() {
 
 func (csm *CSMatrix) performCheck(k, c int) {
 	nConGroups := csm.locatingArray.getNConGroups()
-	conGroups = csm.locatingArray.getConGroups()
+	conGroups := csm.locatingArray.getConGroups()
 	var score int64
 
 	// create a work array
-	array = make([]*CSCol, cols)
-	for col_i := 0; col_i < cols; col_i++ {
+	array := make([]*CSCol, csm.getCols())
+	for col_i := 0; col_i < csm.getCols(); col_i++ {
 		array[col_i] = csm.data[col_i]
 	}
 
@@ -512,14 +513,14 @@ func (csm *CSMatrix) performCheck(k, c int) {
 	elapsedTime := time.Since(start).Seconds()
 	fmt.Println("Elapsed for path sort: ", elapsedTime)
 
-	fmt.Println("Memory check: nPaths = ", nPaths, " of size ", sizeof(Path))
-	fmt.Println("Unfinished paths: ", pathList.size())
+	fmt.Println("Memory check: nPaths = ", nPaths, " of size ", unsafe.Sizeof(path))
+	fmt.Println("Unfinished paths: ", pathList.Len())
 
 	// grab initial time
 	start = time.Now()
-	settingToResample := *FactorSetting
-	csm.pathLAChecker(array, path, path, 0, k, score, settingToResample, nil)
-	csm.minCountCheck(array, c, score, settingToResample, nil)
+	var settingToResample *FactorSetting
+	csm.pathLAChecker(array, path, path, 0, k, &score, &settingToResample, nil)
+	csm.minCountCheck(array, c, &score, &settingToResample, nil)
 	// check current time
 	elapsedTime = time.Since(start).Seconds()
 
@@ -538,8 +539,8 @@ func (csm *CSMatrix) performCheck(k, c int) {
 
 	// grab initial time
 	start = time.Now()
-	score = getArrayScore(array)
-	csm.minCountCheck(array, c, score, settingToResample, nil)
+	score = csm.getArrayScore(array)
+	csm.minCountCheck(array, c, &score, &settingToResample, nil)
 	// check current time
 	elapsedTime = time.Since(start).Seconds()
 
@@ -551,7 +552,7 @@ func (csm *CSMatrix) performCheck(k, c int) {
 	// grab initial time
 	start = time.Now()
 	score = csm.getBruteForceArrayScore(array, k)
-	csm.minCountCheck(array, c, score, settingToResample, nil)
+	csm.minCountCheck(array, c, &score, &settingToResample, nil)
 	// check current time
 	elapsedTime = time.Since(start).Seconds()
 
@@ -579,8 +580,8 @@ func (csm *CSMatrix) autoFindRows(k, c, startRows int) {
 	lowerBound := 1
 
 	// check advanced
-	array = make([]*CSCol, cols)
-	for col_i := 0; col_i < cols; col_i++ {
+	array := make([]*CSCol, csm.getCols())
+	for col_i := 0; col_i < csm.getCols(); col_i++ {
 		array[col_i] = csm.data[col_i]
 	}
 
@@ -595,7 +596,7 @@ func (csm *CSMatrix) autoFindRows(k, c, startRows int) {
 	factors := csm.locatingArray.getFactors()
 	nPaths := 0
 	var score int64
-	settingToResample = *FactorSetting
+	var settingToResample *FactorSetting
 
 	path := &Path{}
 	//	path.min = twoWayMin;
@@ -618,7 +619,7 @@ func (csm *CSMatrix) autoFindRows(k, c, startRows int) {
 			pathList.PushFront(path)
 
 			score = 0
-			csm.randomizePaths(array, settingToResample, path, 0, k, c, score, &pathList, iters)
+			csm.randomizePaths(array, &settingToResample, path, 0, k, c, &score, &pathList, iters)
 
 			fmt.Println("Score: ", score)
 
