@@ -4,6 +4,6 @@ type Occurrence struct {
 	factorList   []int
 	factorList_n int
 	count        int
-	magnitude    float32
+	magnitude    float64
 	list         []Occurrence
 }

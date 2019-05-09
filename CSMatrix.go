@@ -130,7 +130,7 @@ func newCSMatrix(locatingArray *LocatingArray) *CSMatrix {
 
 		for level_i := 0; level_i < csm.groupingInfo[factor_i].levels; level_i++ {
 
-			csm.addOneWayInteraction(factor_i, byte(level_i), levelMatrix, &sumOfSquares)
+			csm.addOneWayInteraction(factor_i, level_i, levelMatrix, &sumOfSquares)
 
 			// set factor level map
 			csm.factorLevelMap[factor_i][level_i] = col_i - 1 // subtract 1 for INTERCEPT
@@ -359,7 +359,8 @@ func (csm *CSMatrix) reorderRows(k, c int) {
 		for row_i := 0; row_i < csm.rows; row_i++ {
 			rowContributions[row_i] = 0
 		}
-		csm.pathSort(array, path, 0, nPaths, nil)
+
+		csm.pathSort(array, list.Element{Value: *path}, 0, &nPaths, nil)
 
 		score = 0
 		var settingToResample *FactorSetting
@@ -508,7 +509,7 @@ func (csm *CSMatrix) performCheck(k, c int) {
 
 	// grab initial time
 	start := time.Now()
-	csm.pathSort(array, path, 0, nPaths, &pathList)
+	csm.pathSort(array, list.Element{Value: *path}, 0, &nPaths, pathList)
 	// check current time
 	elapsedTime := time.Since(start).Seconds()
 	fmt.Println("Elapsed for path sort: ", elapsedTime)
@@ -726,7 +727,7 @@ func (csm *CSMatrix) systematicRandomFix(k, c, initialRows, minChunk int) {
 	pathList := list.New()
 
 	nPaths := 0
-	csm.pathSort(array, path, 0, nPaths, &pathList)
+	csm.pathSort(array, list.Element{Value: *path}, 0, &nPaths, pathList)
 	fmt.Println("nPaths: ", nPaths, " of size ", unsafe.Sizeof(path))
 	fmt.Println("Unfinished paths: ", pathList.Len())
 
@@ -786,7 +787,7 @@ func (csm *CSMatrix) randomizePaths(array []*CSCol, settingToResample **FactorSe
 	// sort paths
 	for e := pathList.Front(); e != nil; e = e.Next() {
 		nPaths := 0
-		csm.pathSort(array, *e, row_top, nPaths, nil)
+		csm.pathSort(array, *e, row_top, &nPaths, nil)
 	}
 
 	// run initial checker
@@ -863,7 +864,7 @@ func (csm *CSMatrix) randomizePaths(array []*CSCol, settingToResample **FactorSe
 		// sort paths and recheck score
 		for e := pathList.Front(); e != nil; e = e.Next() {
 			nPaths := 0
-			csm.pathSort(array, *e, row_top, nPaths, nil)
+			csm.pathSort(array, *e, row_top, &nPaths, nil)
 		}
 
 		elapsedTime := time.Since(start).Seconds()
@@ -941,7 +942,7 @@ func (csm *CSMatrix) randomizePaths(array []*CSCol, settingToResample **FactorSe
 	// sort paths and recheck score
 	for e := newPathList.Front(); e != nil; e = e.Next() {
 		nPaths := 0
-		csm.pathSort(array, *e, row_top, nPaths, pathList)
+		csm.pathSort(array, *e, row_top, &nPaths, pathList)
 	}
 
 	*score = 0
@@ -1051,9 +1052,9 @@ func (csm *CSMatrix) repopulateColumns(setFactor_i int, setLevel_i int, maxFacto
 	mapping *Mapping, levelMatrix [][]int, lastCol_i *int, row_top int, row_len int) {
 
 	if setFactor_i > maxFactor_i && mapping.mappedTo != *lastCol_i {
-		populateColumnData(data[mapping.mappedTo], levelMatrix, row_top, row_len)
+		csm.populateColumnData(csm.data[mapping.mappedTo], levelMatrix, row_top, row_len)
 
-		lastCol_i = mapping.mappedTo
+		*lastCol_i = mapping.mappedTo
 	}
 
 	if t == 0 {
@@ -1078,11 +1079,11 @@ func (csm *CSMatrix) repopulateColumns(setFactor_i int, setLevel_i int, maxFacto
 
 		if factor_i == setFactor_i {
 			csm.repopulateColumns(setFactor_i, setLevel_i, factor_i-1, t-1,
-				mapping.mapping[factorLevelMap[factor_i][setLevel_i]], levelMatrix, lastCol_i, row_top, row_len)
+				mapping.mapping[csm.factorLevelMap[factor_i][setLevel_i]], levelMatrix, lastCol_i, row_top, row_len)
 		} else {
-			for level_i := 0; level_i < groupingInfo[factor_i].levels; level_i++ {
+			for level_i := 0; level_i < csm.groupingInfo[factor_i].levels; level_i++ {
 				csm.repopulateColumns(setFactor_i, setLevel_i, factor_i-1, t-1,
-					mapping.mapping[factorLevelMap[factor_i][level_i]], levelMatrix, lastCol_i, row_top, row_len)
+					mapping.mapping[csm.factorLevelMap[factor_i][level_i]], levelMatrix, lastCol_i, row_top, row_len)
 			}
 		}
 
@@ -1093,16 +1094,16 @@ func (csm *CSMatrix) getRows() int {
 }
 
 func (csm *CSMatrix) getCols() int {
-	return csm.data.size()
+	return len(csm.data)
 }
 
 func (csm *CSMatrix) getCol(col_i int) *CSCol {
 	return csm.data[col_i]
 }
 
-func (csm *CSMatrix) getDistanceToCol(col_i int, residuals *float64) float64 {
+func (csm *CSMatrix) getDistanceToCol(col_i int, residuals []float64) float64 {
 	var distanceSum, subtractionResult float64
-	csCol := data[col_i]
+	csCol := csm.data[col_i]
 
 	for row_i := 0; row_i < csm.rows; row_i++ {
 		subtractionResult = csCol.dataP[row_i] - residuals[row_i]
@@ -1112,19 +1113,19 @@ func (csm *CSMatrix) getDistanceToCol(col_i int, residuals *float64) float64 {
 	return distanceSum
 }
 
-func (csm *CSMatrix) getProductWithCol(col_i int, residuals *float64) float64 {
+func (csm *CSMatrix) getProductWithCol(col_i int, residuals []float64) float64 {
 	var dotSum float64
-	csCol := data[col_i]
+	csCol := csm.data[col_i]
 
 	for row_i := 0; row_i < csm.rows; row_i++ {
 		dotSum += csCol.dataP[row_i] * residuals[row_i]
 	}
 
-	return Abs(dotSum)
+	return math.Abs(dotSum)
 }
 
 func (csm *CSMatrix) getColName(csCol *CSCol) string {
-	colName = ""
+	colName := ""
 
 	if csCol.factors == 0 {
 		colName += "INTERCEPT"
@@ -1135,16 +1136,16 @@ func (csm *CSMatrix) getColName(csCol *CSCol) string {
 		if setting_i != 0 {
 			colName += " & "
 		}
-		colName += getFactorString(csCol.setting[setting_i])
+		colName += csm.getFactorString(csCol.setting[setting_i])
 	}
 
 	return colName
 }
 
 func (csm *CSMatrix) getFactorString(setting FactorSetting) string {
-	factorString = ""
+	factorString := ""
 
-	factorString += factorData.getFactorName(setting.factor_i)
+	factorString += csm.factorData.getFactorName(setting.factor_i)
 	factorString += "="
 
 	if setting.grouped {
@@ -1155,7 +1156,7 @@ func (csm *CSMatrix) getFactorString(setting FactorSetting) string {
 		if index != setting.index {
 			factorString += "|"
 		}
-		factorString += getFactorLevelName(setting.factor_i, index)
+		factorString += csm.getFactorLevelName(setting.factor_i, index)
 	}
 
 	if setting.grouped {
@@ -1169,10 +1170,10 @@ func (csm *CSMatrix) getFactorLevelName(factor_i, level_i int) string {
 	return csm.factorData.getFactorLevelName(factor_i, level_i)
 }
 
-func (csm *CSMatrix) addOneWayInteraction(factor_i int, level_i byte, levelMatrix [][]int, sumOfSquares *[]float64) {
+func (csm *CSMatrix) addOneWayInteraction(factor_i int, level_i int, levelMatrix [][]int, sumOfSquares *[]float64) {
 	// create new column for CS Matrix
 	csCol := &CSCol{}
-	sum := 0
+	var sum float64
 
 	// assign the headers
 	csCol.factors = 1 // 1 contributing factor (1-way interaction)
@@ -1184,7 +1185,7 @@ func (csm *CSMatrix) addOneWayInteraction(factor_i int, level_i byte, levelMatri
 
 	// populate every row
 	for row_i := 0; row_i < csm.rows; row_i++ {
-		csm.addRow(csCol)
+		csm.addArray(csCol)
 
 		// 1 or -1 depending on if the factor levels matched
 		if level_i == levelMatrix[row_i][factor_i] {
@@ -1198,14 +1199,14 @@ func (csm *CSMatrix) addOneWayInteraction(factor_i int, level_i byte, levelMatri
 	}
 
 	// push into vector
-	csm.data.push_back(csCol)
+	// TODO csm.data.push_back(csCol)
 	*sumOfSquares = append(*sumOfSquares, sum)
 }
 
 func (csm *CSMatrix) print() {
 	fmt.Println("CSMatrix:")
 	for col_i := 0; col_i < csm.getCols(); col_i++ {
-		fmt.Printf("%s\t", csm.getColName(data.at(col_i)))
+		fmt.Printf("%s\t", csm.getColName(csm.data[col_i]))
 	}
 	fmt.Println("")
 
@@ -1231,9 +1232,9 @@ func (csm *CSMatrix) countOccurrences(csCol *CSCol, occurrence *Occurrence, minS
 
 	for setting_i := minSetting_i; setting_i < csCol.factors; setting_i++ {
 		occurrence.list[csCol.setting[setting_i].factor_i].count++
-		occurrence.list[csCol.setting[setting_i].factor_i].magnitude += Abs(magnitude)
+		occurrence.list[csCol.setting[setting_i].factor_i].magnitude += math.Abs(magnitude)
 
-		csnm.countOccurrences(csCol, &occurrence.list[csCol.setting[setting_i].factor_i], setting_i+1, magnitude)
+		csm.countOccurrences(csCol, &occurrence.list[csCol.setting[setting_i].factor_i], setting_i+1, magnitude)
 	}
 }
 
@@ -1243,7 +1244,7 @@ func (csm *CSMatrix) getColIndex(csCol *CSCol) int {
 		if m == nil {
 			return -1
 		}
-		m = m.mapping[factorLevelMap[csCol.setting[setting_i].factor_i][csCol.setting[setting_i].index]]
+		m = m.mapping[csm.factorLevelMap[csCol.setting[setting_i].factor_i][csCol.setting[setting_i].index]]
 	}
 	return m.mappedTo
 }
@@ -1278,7 +1279,7 @@ func (csm *CSMatrix) smartSort(array []*CSCol, sortedRows int) {
 		if csm.compare(array[col_i-1], array[col_i], 0, sortedRows) < 0 {
 			streakMax = col_i - 1
 			if streakMin < streakMax {
-				csm.rowSort(array, streakMin, streakMax, sortedRows, rows-sortedRows)
+				csm.rowSort(array, streakMin, streakMax, sortedRows, csm.rows-sortedRows)
 			}
 			streakMin = col_i
 		}
@@ -1287,7 +1288,7 @@ func (csm *CSMatrix) smartSort(array []*CSCol, sortedRows int) {
 	// add the final streak
 	streakMax = csm.getCols() - 1
 	if streakMin < streakMax {
-		csm.rowSort(array, streakMin, streakMax, sortedRows, rows-sortedRows)
+		csm.rowSort(array, streakMin, streakMax, sortedRows, csm.rows-sortedRows)
 	}
 }
 
@@ -1385,14 +1386,15 @@ func (csm *CSMatrix) sortByTWayInteraction(array []*CSCol, min int, max int) int
 	return tempMin + 1
 }
 
-func (csm *CSMatrix) pathSort(array []*CSCol, path *Path, row_i int, nPaths *int, pathList *List) {
+func (csm *CSMatrix) pathSort(array []*CSCol, e list.Element, row_i int, nPaths *int, pathList *list.List) {
+	var path *Path = e.Value.(*Path)
 	if path.min == path.max {
-		deletePath(path.entryA)
-		deletePath(path.entryB)
+		csm.deletePath(path.entryA)
+		csm.deletePath(path.entryB)
 		path.entryA = nil
 		path.entryB = nil
 		return
-	} else if row_i >= rows {
+	} else if row_i >= csm.rows {
 		// add to list
 		if pathList != nil {
 			pathList.PushFront(path)
@@ -1425,7 +1427,7 @@ func (csm *CSMatrix) pathSort(array []*CSCol, path *Path, row_i int, nPaths *int
 			fmt.Println("mistake")
 		}
 	}
-	for col_i = tempMax; col_i <= path.max; col_i++ {
+	for col_i := tempMax; col_i <= path.max; col_i++ {
 		if array[col_i].dataP[row_i] != ENTRY_B {
 			fmt.Println("mistake")
 		}
@@ -1435,12 +1437,12 @@ func (csm *CSMatrix) pathSort(array []*CSCol, path *Path, row_i int, nPaths *int
 	}
 
 	if path.min <= tempMin {
-		nPaths++
+		*nPaths = *nPaths + 1
 		// allocate memory if none exists
-		if path.entryA == nill {
+		if path.entryA == nil {
 			path.entryA = &Path{}
-			path.entryA.entryA = nill
-			path.entryA.entryB = nill
+			path.entryA.entryA = nil
+			path.entryA.entryB = nil
 		}
 
 		// populate path for entryA
@@ -1448,7 +1450,7 @@ func (csm *CSMatrix) pathSort(array []*CSCol, path *Path, row_i int, nPaths *int
 		path.entryA.max = tempMin
 
 		// sort path for entryA
-		csm.pathSort(array, path.entryA, row_i+1, nPaths, pathList)
+		csm.pathSort(array, list.Element{Value: *path.entryA}, row_i+1, nPaths, pathList)
 	} else {
 		// delete unnecessary path for entryA
 		csm.deletePath(path.entryA)
@@ -1456,7 +1458,7 @@ func (csm *CSMatrix) pathSort(array []*CSCol, path *Path, row_i int, nPaths *int
 	}
 
 	if tempMax <= path.max {
-		nPaths++
+		*nPaths = *nPaths + 1
 		// allocate memory if none exists
 		if path.entryB == nil {
 			path.entryB = &Path{}
@@ -1469,7 +1471,7 @@ func (csm *CSMatrix) pathSort(array []*CSCol, path *Path, row_i int, nPaths *int
 		path.entryB.max = path.max
 
 		// sort path for entryB
-		csm.pathSort(array, path.entryB, row_i+1, nPaths, pathList)
+		csm.pathSort(array, list.Element{Value: *path.entryB}, row_i+1, nPaths, pathList)
 	} else {
 		csm.deletePath(path.entryB)
 		path.entryB = nil
@@ -1489,16 +1491,16 @@ func (csm *CSMatrix) pathLAChecker(array []*CSCol, pathA *Path, pathB *Path, row
 	score *int64, settingToResample **FactorSetting, rowContributions []int64) {
 	if k == 0 || pathA == nil || pathB == nil || pathA.min == pathB.max {
 		return
-	} else if row_i == rows {
+	} else if row_i == csm.rows {
 		//		cout << "Issue " << getColName(array[pathA->min]) << " vs " << getColName(array[pathB->max]) << endl;
 		if pathA == pathB {
-			score += int64(k) * (int64(pathA.max-pathA.min+1) * int64(pathA.max-pathA.min)) / 2
+			*score += int64(k) * (int64(pathA.max-pathA.min+1) * int64(pathA.max-pathA.min)) / 2
 		} else {
-			score += int64(k) * int64(pathA.max-pathA.min+1) * int64(pathB.max-pathB.min+1)
+			*score += int64(k) * int64(pathA.max-pathA.min+1) * int64(pathB.max-pathB.min+1)
 		}
 
 		// set a setting to resample
-		if settingToResample == NULL {
+		if settingToResample == nil {
 			columnToResample := -1
 
 			/*
@@ -1516,13 +1518,13 @@ func (csm *CSMatrix) pathLAChecker(array []*CSCol, pathA *Path, pathB *Path, row
 
 			// find a pair of columns that is distinguishable
 			for i_a := pathA.min; i_a <= pathA.max && columnToResample == -1; i_a++ {
-				var int i_b
+				var i_b int
 				if pathA == pathB {
 					i_b = i_a + 1
 				}
-				for i_b; i_b <= pathB.max && columnToResample == -1; i_b++ {
+				for i_b := i_b; i_b <= pathB.max && columnToResample == -1; i_b++ {
 					if csm.checkDistinguishable(array[i_a], array[i_b]) {
-						if rand.Intn(2) && array[i_a].factors > 0 {
+						if (rand.Intn(2) == 1) && (array[i_a].factors > 0) {
 							columnToResample = i_a
 						} else if array[i_b].factors > 0 {
 							columnToResample = i_b
@@ -1536,7 +1538,7 @@ func (csm *CSMatrix) pathLAChecker(array []*CSCol, pathA *Path, pathB *Path, row
 
 			// randomly choose a setting in the column to resample
 			if columnToResample != -1 {
-				settingToResample = &array[columnToResample].setting[rand.Intn(array[columnToResample].factors)]
+				*settingToResample = &array[columnToResample].setting[rand.Intn(array[columnToResample].factors)]
 			}
 		}
 
@@ -1575,7 +1577,7 @@ func (csm *CSMatrix) pathLAChecker(array []*CSCol, pathA *Path, pathB *Path, row
 
 	// add row contributions
 	if rowContributions != nil && pathAentryA != nil && pathBentryB != nil {
-		rowContributions[row_i] += (pathAentryA.max - pathAentryA.min + 1) * (pathBentryB.max - pathBentryB.min + 1)
+		rowContributions[row_i] += int64(pathAentryA.max-pathAentryA.min+1) * int64(pathBentryB.max-pathBentryB.min+1)
 	}
 
 	if pathA != pathB {
@@ -1583,7 +1585,7 @@ func (csm *CSMatrix) pathLAChecker(array []*CSCol, pathA *Path, pathB *Path, row
 
 		// add row contributions
 		if rowContributions != nil && pathAentryB != nil && pathBentryA != nil {
-			rowContributions[row_i] += (pathAentryB.max - pathAentryB.min + 1) * (pathBentryA.max - pathBentryA.min + 1)
+			rowContributions[row_i] += int64(pathAentryB.max-pathAentryB.min+1) * int64(pathBentryA.max-pathBentryA.min+1)
 		}
 
 	}
@@ -1594,16 +1596,16 @@ func (csm *CSMatrix) pathDAChecker(array []*CSCol, pathA *Path, pathB *Path, row
 	score *int64, settingToResample **FactorSetting, rowContributions []int64) {
 	if k == 0 || pathA == nil || pathB == nil || pathA.min == pathB.max {
 		return
-	} else if row_i == rows {
+	} else if row_i == csm.rows {
 		//		cout << getColName(array[pathA->min]) << " vs " << getColName(array[pathB->max]) << endl;
 		if pathA == pathB {
-			score += int64(k) * (int64(pathA.max-pathA.min+1) * int64(pathA.max-pathA.min)) / 2
+			*score += int64(k) * (int64(pathA.max-pathA.min+1) * int64(pathA.max-pathA.min)) / 2
 		} else {
-			score += int64(k) * int64(pathA.max-pathA.min+1) * int64(pathB.max-pathB.min+1)
+			*score += int64(k) * int64(pathA.max-pathA.min+1) * int64(pathB.max-pathB.min+1)
 		}
 
 		// set a setting to resample
-		if settingToResample == NULL {
+		if settingToResample == nil {
 			var columnToResample int
 			var offset int
 			for ok := true; ok; ok = array[columnToResample].factors <= 0 {
@@ -1616,7 +1618,7 @@ func (csm *CSMatrix) pathDAChecker(array []*CSCol, pathA *Path, pathB *Path, row
 				}
 			}
 
-			settingToResample = &array[columnToResample].setting[rand.Intn(array[columnToResample].factors)]
+			*settingToResample = &array[columnToResample].setting[rand.Intn(array[columnToResample].factors)]
 		}
 
 		return
@@ -1655,7 +1657,7 @@ func (csm *CSMatrix) pathDAChecker(array []*CSCol, pathA *Path, pathB *Path, row
 
 	// add row contributions
 	if rowContributions != nil && pathAentryA != nil && pathBentryB != nil {
-		rowContributions[row_i] += (pathAentryA.max - pathAentryA.min + 1) * (pathBentryB.max - pathBentryB.min + 1)
+		rowContributions[row_i] += int64(pathAentryA.max-pathAentryA.min+1) * int64(pathBentryB.max-pathBentryB.min+1)
 	}
 }
 
@@ -1707,6 +1709,7 @@ func (csm *CSMatrix) compare(csCol1 *CSCol, csCol2 *CSCol, row_top int, row_len 
 			return 1
 		}
 	}
+	return 0
 }
 
 // LEGACY (to be removed later)
@@ -1732,7 +1735,7 @@ func (csm *CSMatrix) checkAdvanced(array []*CSCol, k int, min int, max int, row_
 
 			if csCol1.factors != 0 && csCol2.factors != 0 {
 				// neither has 0 factors, choose randomly
-				if rand.Intn(2) {
+				if rand.Intn(2) == 1 {
 					csColToResample = csCol1
 				} else {
 					csColToResample = csCol2
@@ -1747,12 +1750,12 @@ func (csm *CSMatrix) checkAdvanced(array []*CSCol, k int, min int, max int, row_
 
 			// chose a random factor setting to resample
 			if csColToResample != nil {
-				settingToResample = &csColToResample.setting[rand.Intn(csColToResample.factors)]
+				*settingToResample = &csColToResample.setting[rand.Intn(csColToResample.factors)]
 			}
 		}
 
 		cols := max - min + 1
-		return int64(math.Pow((cols * cols), k))
+		return int64(math.Pow(float64(cols)*float64(cols), float64(k)))
 	} else {
 		var score int64
 
@@ -1771,11 +1774,11 @@ func (csm *CSMatrix) checkAdvanced(array []*CSCol, k int, min int, max int, row_
 		}
 
 		// check the left side
-		score += checkAdvanced(array, k, min, divide, row_top+1, row_len-1, settingToResample)
+		score += csm.checkAdvanced(array, k, min, divide, row_top+1, row_len-1, settingToResample)
 		// check the right side
-		score += checkAdvanced(array, k, divide+1, max, row_top+1, row_len-1, settingToResample)
+		score += csm.checkAdvanced(array, k, divide+1, max, row_top+1, row_len-1, settingToResample)
 		// check both
-		score += checkAdvanced(array, k-1, min, max, row_top+1, row_len-1, settingToResample)
+		score += csm.checkAdvanced(array, k-1, min, max, row_top+1, row_len-1, settingToResample)
 
 		return score
 	}
@@ -1783,7 +1786,7 @@ func (csm *CSMatrix) checkAdvanced(array []*CSCol, k int, min int, max int, row_
 
 // FUNCTIONS FOR 'fixla'
 
-func (csm *CSMatrix) addRow(array []*CSCol, levelRow []byte) {
+func (csm *CSMatrix) addRow(array []*CSCol, levelRow []int) {
 	csm.rows++
 
 	csm.locatingArray.addLevelRow(levelRow)
@@ -1791,7 +1794,7 @@ func (csm *CSMatrix) addRow(array []*CSCol, levelRow []byte) {
 	// add a row to each column of the CS matrix and populate
 	for col_i := 0; col_i < csm.getCols(); col_i++ {
 		csm.addArray(array[col_i])
-		populateColumnData(array[col_i], csm.locatingArray.getLevelMatrix(), rows-1, 1)
+		csm.populateColumnData(array[col_i], csm.locatingArray.getLevelMatrix(), csm.rows-1, 1)
 	}
 }
 
@@ -1815,11 +1818,11 @@ func (csm *CSMatrix) resizeArray(array []*CSCol, newRows int) {
 	// increase size as needed
 	for newRows > csm.rows {
 		// allocate memory for new row of locating array
-		levelRow := make([]byte, factors)
+		levelRow := make([]int, factors)
 
 		// generate random row
 		for factor_i := 0; factor_i < factors; factor_i++ {
-			levelRow[factor_i] = rand.Intn(groupingInfo[factor_i].levels)
+			levelRow[factor_i] = rand.Intn(csm.groupingInfo[factor_i].levels)
 		}
 
 		// resample constraint groups
@@ -1841,8 +1844,8 @@ func (csm *CSMatrix) checkColumnCoverability(csCol *CSCol) bool {
 	nConGroups := csm.locatingArray.getNConGroups()
 	conGroups := csm.locatingArray.getConGroups()
 
-	requireLevelRow := make([]byte, factors)
-	avoidLevelRow := make([]byte, factors)
+	requireLevelRow := make([]int, factors)
+	avoidLevelRow := make([]int, factors)
 	for factor_i := 0; factor_i < factors; factor_i++ {
 		requireLevelRow[factor_i] = -1
 		avoidLevelRow[factor_i] = -1
@@ -1874,11 +1877,11 @@ func (csm *CSMatrix) checkDistinguishable(csCol1, csCol2 *CSCol) bool {
 
 func (csm *CSMatrix) checkOneWayDistinguishable(csCol1, csCol2 *CSCol) bool {
 	factors := csm.locatingArray.getFactors()
-	nConGroups = csm.locatingArray.getNConGroups()
+	nConGroups := csm.locatingArray.getNConGroups()
 	conGroups := csm.locatingArray.getConGroups()
 
-	requireLevelRow := make([]byte, factors)
-	avoidLevelRow := make([]byte, factors)
+	requireLevelRow := make([]int, factors)
+	avoidLevelRow := make([]int, factors)
 	for factor_i := 0; factor_i < factors; factor_i++ {
 		requireLevelRow[factor_i] = -1
 		avoidLevelRow[factor_i] = -1
@@ -1893,10 +1896,10 @@ func (csm *CSMatrix) checkOneWayDistinguishable(csCol1, csCol2 *CSCol) bool {
 	settingExists := false
 
 	// try to avoid at least one csCol2 setting
-	for setting_i = 0; setting_i < csCol2.factors; setting_i++ {
+	for setting_i := 0; setting_i < csCol2.factors; setting_i++ {
 		// we are trying to avoid "csCol2->setting[setting_i].factor_i != csCol2->setting[setting_i].index" in this iteration
 		// we cannot require the setting we are trying to avoid
-		if requireLevelRow[csCol2.setting[setting_i].factor_i] != csCol.setting[setting_i].index {
+		if requireLevelRow[csCol2.setting[setting_i].factor_i] != csCol2.setting[setting_i].index {
 			avoidLevelRow[csCol2.setting[setting_i].factor_i] = csCol2.setting[setting_i].index
 
 			// check if possible for every constraint group
@@ -1937,13 +1940,13 @@ func (csm *CSMatrix) randomizeArray(array []*CSCol) {
 
 	// populate each column of the CS matrix
 	for col_i := 0; col_i < cols; col_i++ {
-		csm.populateColumnData(array[col_i], csm.locatingArray.getLevelMatrix(), 0, rows)
+		csm.populateColumnData(array[col_i], csm.locatingArray.getLevelMatrix(), 0, csm.rows)
 	}
 }
 
 func (csm *CSMatrix) addRowFix(array []*CSCol, csScore *int64) {
 	// the maximum seconds without finding a better score
-	secsMax := 2
+	var secsMax float64 = 2
 
 	// total factors in locating array
 	factors := csm.locatingArray.getFactors()
@@ -1958,13 +1961,13 @@ func (csm *CSMatrix) addRowFix(array []*CSCol, csScore *int64) {
 	backupArray := make([]*CSCol, cols)
 
 	// allocate memory for new row of locating array
-	levelRow := make([]byte, factors)
-	oldLevelRow := make([]byte, factors)
-	newLevelRow := make([]byte, factors)
-	bestLevelRow := make([]byte, factors)
+	levelRow := make([]int, factors)
+	oldLevelRow := make([]int, factors)
+	newLevelRow := make([]int, factors)
+	bestLevelRow := make([]int, factors)
 
 	// track if factors of new row are finalized
-	finalized = make([]bool, factors)
+	finalized := make([]bool, factors)
 
 	// generate random row non-finalized
 	for factor_i := 0; factor_i < factors; factor_i++ {
@@ -1974,7 +1977,7 @@ func (csm *CSMatrix) addRowFix(array []*CSCol, csScore *int64) {
 
 	// add the row to locating array
 	csm.addRow(array, levelRow)
-	fmt.Println("The matrix now has ", rows, " rows")
+	fmt.Println("The matrix now has ", csm.rows, " rows")
 
 	// smartly sort the array and score it
 	csm.smartSort(array, csm.rows-1)
@@ -1990,7 +1993,7 @@ func (csm *CSMatrix) addRowFix(array []*CSCol, csScore *int64) {
 	for {
 
 		// find the best column index (with the best score)
-		bestScore = &csScore // the original best is the original score
+		bestScore = *csScore // the original best is the original score
 		bestCol = nil        // no best column yet
 
 		// backup the sorted order of the array
@@ -2000,7 +2003,7 @@ func (csm *CSMatrix) addRowFix(array []*CSCol, csScore *int64) {
 		start := time.Now()
 
 		// go through all columns of CS matrix
-		for col_i = 0; col_i < csm.getCols()-1; col_i++ {
+		for col_i := 0; col_i < csm.getCols()-1; col_i++ {
 			elapsedTime := time.Since(start).Seconds()
 			if elapsedTime > secsMax {
 				break
@@ -2021,7 +2024,7 @@ func (csm *CSMatrix) addRowFix(array []*CSCol, csScore *int64) {
 			csCol = array[col_i]
 
 			// if duplicate and the column has factors to change (column is not the INTERCEPT)
-			if duplicate && csCol.dataP[rows-1] != 1 && csCol.factors > 0 {
+			if duplicate && csCol.dataP[csm.rows-1] != 1 && csCol.factors > 0 {
 
 				// grab duplicate column
 				csDup := array[col_i+1]
@@ -2032,7 +2035,7 @@ func (csm *CSMatrix) addRowFix(array []*CSCol, csScore *int64) {
 				var factor_i int
 
 				// go through all relevant factors for this column
-				for setting_i = 0; setting_i < csCol.factors; setting_i++ {
+				for setting_i := 0; setting_i < csCol.factors; setting_i++ {
 					factor_i = csCol.setting[setting_i].factor_i
 
 					// backup the factor level
@@ -2045,7 +2048,7 @@ func (csm *CSMatrix) addRowFix(array []*CSCol, csScore *int64) {
 							rand.Intn(csCol.setting[setting_i].levelsInGroup)
 					} else {
 						// ensure this will actually make this column a 1
-						changeAllowed &= (newLevelRow[factor_i] >= csCol.setting[setting_i].index &&
+						changeAllowed = changeAllowed && (newLevelRow[factor_i] >= csCol.setting[setting_i].index &&
 							newLevelRow[factor_i] < csCol.setting[setting_i].index+csCol.setting[setting_i].levelsInGroup)
 					}
 
@@ -2058,20 +2061,20 @@ func (csm *CSMatrix) addRowFix(array []*CSCol, csScore *int64) {
 					// because the array is reordered. Use csCol
 
 					// try making the changes and see if the CS score gets smaller
-					newScore = &csScore
+					newScore = *csScore
 					for setting_i := 0; setting_i < csCol.factors; setting_i++ {
 						factor_i = csCol.setting[setting_i].factor_i
 
 						if levelRow[factor_i] != newLevelRow[factor_i] {
 							// update columns
 							levelRow[factor_i] = newLevelRow[factor_i]
-							csm.repopulateColumns(factor_i, oldLevelRow[factor_i], rows-1, 1)
-							csm.repopulateColumns(factor_i, newLevelRow[factor_i], rows-1, 1)
+							csm.repopulateColumns2(factor_i, oldLevelRow[factor_i], csm.rows-1, 1)
+							csm.repopulateColumns2(factor_i, newLevelRow[factor_i], csm.rows-1, 1)
 						}
 					}
 
 					// smart sort and get new score
-					csm.smartSort(array, rows-1)
+					csm.smartSort(array, csm.rows-1)
 					newScore = csm.getArrayScore(array)
 
 					// check if we have a better score
@@ -2092,8 +2095,8 @@ func (csm *CSMatrix) addRowFix(array []*CSCol, csScore *int64) {
 						if oldLevelRow[factor_i] != levelRow[factor_i] {
 							// rollback columns and get new score
 							levelRow[factor_i] = oldLevelRow[factor_i]
-							csm.repopulateColumns(factor_i, oldLevelRow[factor_i], rows-1, 1)
-							csm.repopulateColumns(factor_i, newLevelRow[factor_i], rows-1, 1)
+							csm.repopulateColumns2(factor_i, oldLevelRow[factor_i], csm.rows-1, 1)
+							csm.repopulateColumns2(factor_i, newLevelRow[factor_i], csm.rows-1, 1)
 						}
 					}
 
@@ -2105,7 +2108,7 @@ func (csm *CSMatrix) addRowFix(array []*CSCol, csScore *int64) {
 		}
 
 		// check if we found a better score
-		if bestScore < csScore {
+		if bestScore < *csScore {
 			//			cout << "Found better score! " << bestScore << endl;
 
 			// make the change to improve the score
@@ -2117,8 +2120,8 @@ func (csm *CSMatrix) addRowFix(array []*CSCol, csScore *int64) {
 					// update columns and get new score
 					oldLevelRow[factor_i] = levelRow[factor_i]
 					levelRow[factor_i] = bestLevelRow[factor_i]
-					csm.repopulateColumns(factor_i, oldLevelRow[factor_i], rows-1, 1)
-					csm.repopulateColumns(factor_i, bestLevelRow[factor_i], rows-1, 1)
+					csm.repopulateColumns2(factor_i, oldLevelRow[factor_i], csm.rows-1, 1)
+					csm.repopulateColumns2(factor_i, bestLevelRow[factor_i], csm.rows-1, 1)
 				}
 
 				// finalize the changes
@@ -2126,15 +2129,15 @@ func (csm *CSMatrix) addRowFix(array []*CSCol, csScore *int64) {
 			}
 
 			// do a final smart sort and finalize the changed factors
-			csm.smartSort(array, rows-1)
-			csScore = csm.getArrayScore(array)
+			csm.smartSort(array, csm.rows-1)
+			*csScore = csm.getArrayScore(array)
 
 		} else {
 			break
 		}
 	}
 
-	fmt.Println("Score after finalized row: ", &csScore)
+	fmt.Println("Score after finalized row: ", *csScore)
 }
 
 func (csm *CSMatrix) getArrayScore(array []*CSCol) int64 {
@@ -2165,7 +2168,7 @@ func (csm *CSMatrix) getArrayScore(array []*CSCol) int64 {
 	streak++
 	squaredSum += streak * streak
 
-	return (squaredSum - getCols())
+	return (squaredSum - int64(csm.getCols()))
 }
 
 func (csm *CSMatrix) getBruteForceArrayScore(array []*CSCol, k int) int64 {
@@ -2192,7 +2195,7 @@ func (csm *CSMatrix) getBruteForceArrayScore(array []*CSCol, k int) int64 {
 				}
 
 				if differences < k {
-					score += (k - differences)
+					score += int64(k - differences)
 				}
 			}
 		}

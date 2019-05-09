@@ -14,7 +14,7 @@ type Result struct {
 	result1  *Result // LHS of Eq equation
 	result2  *Result // RHS of Eq equation
 	operand  string  //
-	value    float32 //
+	value    float64 //
 	factor_i int     //
 }
 
@@ -52,7 +52,7 @@ func newResult(array *LocatingArray, words []string, index *int) *Result {
 	return r
 }
 
-func (op *Result) getResult(test int) float32 {
+func (op *Result) getResult(test int) float64 {
 	if op.operand == "==" {
 		if op.result1.getResult(test) == op.result2.getResult(test) {
 			return 1
@@ -161,7 +161,7 @@ func newConstraintGroup(array *LocatingArray, lines []string) *ConstraintGroup {
 	}
 
 	// create constraint group LA
-	cg.groupLA = newLocatingArray(factors, levelCounts)
+	cg.groupLA = NewLocatingArrayFromFactors(factors, levelCounts)
 
 	words = strings.Fields(lines[1])
 	constraints, err := strconv.Atoi(words[0])
@@ -187,8 +187,8 @@ func newConstraintGroup(array *LocatingArray, lines []string) *ConstraintGroup {
 	}
 
 	// populate groupLA
-	levelRow := make([]byte, array.getFactors())
-	factorLevels := make([]byte, factors)
+	levelRow := make([]int, array.getFactors())
+	factorLevels := make([]int, factors)
 
 	// loop through all locating array factors and set all to 0
 	for factor_i := 0; factor_i < array.getFactors(); factor_i++ {
@@ -211,19 +211,19 @@ func newConstraintGroup(array *LocatingArray, lines []string) *ConstraintGroup {
 	fullFactorialCount := 0
 
 	// call recursive populator
-	populateGroupLA(array, levelRow, factorLevels, 0, settingCount, fullFactorialCount)
+	cg.populateGroupLA(array, levelRow, factorLevels, 0, settingCount, &fullFactorialCount)
 
 	// assign row weights based on groupLA entries
-	groupLevelMatrix := groupLA.getLevelMatrix()
-	rowWeights := make([]float, groupLA.getTests())
-	weightMin := make([]int, groupLA.getTests())
-	weightMax := make([]int, groupLA.getTests())
-	var prevWeight float32 = 0
+	groupLevelMatrix := cg.groupLA.getLevelMatrix()
+	rowWeights := make([]float64, cg.groupLA.getTests())
+	weightMin := make([]int, cg.groupLA.getTests())
+	weightMax := make([]int, cg.groupLA.getTests())
+	var prevWeight float64 = 0
 
-	for row_i := 0; row_i < groupLA.getTests(); row_i++ {
+	for row_i := 0; row_i < cg.groupLA.getTests(); row_i++ {
 		rowWeights[row_i] = prevWeight
 		for col_i := 0; col_i < factors; col_i++ {
-			rowWeights[row_i] += float32(fullFactorialCount / settingCount[col_i][groupLevelMatrix[row_i][col_i]])
+			rowWeights[row_i] += float64(fullFactorialCount / settingCount[col_i][groupLevelMatrix[row_i][col_i]])
 			//			cout << (int)groupLevelMatrix[row_i][col_i] << "\t";
 		}
 
@@ -244,8 +244,8 @@ func newConstraintGroup(array *LocatingArray, lines []string) *ConstraintGroup {
 	return cg
 }
 
-func (cg *ConstraintGroup) populateGroupLA(array *LocatingArray, levelRow []byte,
-	factorLevels []byte, fixedFactors int, settingCount []*int, fullFactorialCount *int) {
+func (cg *ConstraintGroup) populateGroupLA(array *LocatingArray, levelRow []int,
+	factorLevels []int, fixedFactors int, settingCount [][]int, fullFactorialCount *int) {
 	if fixedFactors == cg.factors {
 		//		for (int factor_i = 0; factor_i < factors; factor_i++) {
 		//			cout << (int)factorLevels[factor_i] << "\t";
@@ -256,14 +256,14 @@ func (cg *ConstraintGroup) populateGroupLA(array *LocatingArray, levelRow []byte
 		*fullFactorialCount++
 
 		// loop through all factors in constraint group
-		for factor_i := 0; factor_i < factors; factor_i++ {
-			levelRow[factorIndeces[factor_i]] = factorLevels[factor_i]
+		for factor_i := 0; factor_i < cg.factors; factor_i++ {
+			levelRow[cg.factorIndeces[factor_i]] = factorLevels[factor_i]
 		}
 
 		// add factorLevels to groupLA if group constraints are satisfied
 		if cg.getResult(0) {
-			groupLevelRow := make([]byte, factors)
-			for factor_i := 0; factor_i < factors; factor_i++ {
+			groupLevelRow := make([]int, cg.factors)
+			for factor_i := 0; factor_i < cg.factors; factor_i++ {
 				groupLevelRow[factor_i] = factorLevels[factor_i]
 
 				// increment the setting count
@@ -273,14 +273,14 @@ func (cg *ConstraintGroup) populateGroupLA(array *LocatingArray, levelRow []byte
 		}
 	} else {
 		// call recursively for full-factorial design
-		for level_i := 0; level_i < cg.array.getGroupingInfo()[factorIndeces[fixedFactors]].levels; level_i++ {
+		for level_i := 0; level_i < array.getGroupingInfo()[cg.factorIndeces[fixedFactors]].levels; level_i++ {
 			factorLevels[fixedFactors] = level_i
-			populateGroupLA(array, levelRow, factorLevels, fixedFactors+1, settingCount, fullFactorialCount)
+			cg.populateGroupLA(array, levelRow, factorLevels, fixedFactors+1, settingCount, fullFactorialCount)
 		}
 	}
 }
 
-func (cg *ConstraintGroup) satisfiableInGroupLA(requireLevelRow []byte, avoidLevelRow []byte) bool {
+func (cg *ConstraintGroup) satisfiableInGroupLA(requireLevelRow []int, avoidLevelRow []int) bool {
 	levelMatrix := cg.groupLA.getLevelMatrix()
 
 	for test_i := 0; test_i < cg.groupLA.getTests(); test_i++ {
@@ -289,17 +289,17 @@ func (cg *ConstraintGroup) satisfiableInGroupLA(requireLevelRow []byte, avoidLev
 		// check requireLevelRow
 		for factor_i := 0; factor_i < cg.groupLA.getFactors() && match; factor_i++ {
 			// check if the required level disagrees with the LA row
-			if requireLevelRow[factorIndeces[factor_i]] != -1 &&
-				requireLevelRow[factorIndeces[factor_i]] != levelMatrix[test_i][factor_i] {
+			if requireLevelRow[cg.factorIndeces[factor_i]] != -1 &&
+				requireLevelRow[cg.factorIndeces[factor_i]] != levelMatrix[test_i][factor_i] {
 				match = false
 			}
 		}
 
 		// check avoidLevelRow
-		for factor_i = 0; factor_i < cg.groupLA.getFactors() && match; factor_i++ {
+		for factor_i := 0; factor_i < cg.groupLA.getFactors() && match; factor_i++ {
 			// check if the avoided level disagrees with the LA row
-			if avoidLevelRow[factorIndeces[factor_i]] != -1 &&
-				avoidLevelRow[factorIndeces[factor_i]] == levelMatrix[test_i][factor_i] {
+			if avoidLevelRow[cg.factorIndeces[factor_i]] != -1 &&
+				avoidLevelRow[cg.factorIndeces[factor_i]] == levelMatrix[test_i][factor_i] {
 				match = false
 			}
 		}
@@ -315,7 +315,8 @@ func (cg *ConstraintGroup) satisfiableInGroupLA(requireLevelRow []byte, avoidLev
 
 func (cg *ConstraintGroup) getResult(test int) bool {
 	for constraint_i := 0; constraint_i < cg.constraints; constraint_i++ {
-		if !boolConstraints[constraint_i].getResult(test) {
+		// TODO float equality check careful
+		if cg.boolConstraints[constraint_i].getResult(test) == 0 {
 			return false
 		}
 	}
@@ -335,12 +336,12 @@ func (cg *ConstraintGroup) randPopulateLevelRow(levelRow []int) {
 	for topRow != botRow {
 		row_i := (topRow + botRow) / 2
 
-		if weightRand <= weightMax[row_i] && weightRand >= weightMin[row_i] {
+		if weightRand <= cg.weightMax[row_i] && weightRand >= cg.weightMin[row_i] {
 			topRow = row_i
 			botRow = row_i
-		} else if weightRand < weightMin[row_i] {
+		} else if weightRand < cg.weightMin[row_i] {
 			topRow = row_i - 1
-		} else if weightRand > weightMax[row_i] {
+		} else if weightRand > cg.weightMax[row_i] {
 			botRow = row_i + 1
 		} else {
 			// should never reach here
@@ -348,24 +349,24 @@ func (cg *ConstraintGroup) randPopulateLevelRow(levelRow []int) {
 		}
 	}
 
-	for factor_i := 0; factor_i < factors; factor_i++ {
-		levelRow[factorIndeces[factor_i]] = levelMatrix[topRow][factor_i]
+	for factor_i := 0; factor_i < cg.factors; factor_i++ {
+		levelRow[cg.factorIndeces[factor_i]] = levelMatrix[topRow][factor_i]
 	}
 }
 
 func (cg *ConstraintGroup) writeToStream(w *bufio.Writer) {
 	// write constraint group factors
-	factorsAndIndeces := make([]int, factors+1)
-	factorsAndIndeces[0] = cg.factors
-	for factor_i := 0; factor_i < factors; factor_i++ {
-		factorsAndIndeces[factor_i+1] = cg.factorIndeces[factor_i]
+	factorsAndIndeces := make([]string, cg.factors+1)
+	factorsAndIndeces[0] = string(cg.factors)
+	for factor_i := 0; factor_i < cg.factors; factor_i++ {
+		factorsAndIndeces[factor_i+1] = string(cg.factorIndeces[factor_i])
 	}
 	fmt.Fprintln(w, strings.Join(factorsAndIndeces, "\t"))
 
 	// write constraints
-	constraints := make([]string, constraints+1)
+	constraints := make([]string, cg.constraints+1)
 	constraints[0] = strconv.Itoa(cg.constraints)
-	for constraint_i := 0; constraint_i < constraints; constraint_i++ {
+	for constraint_i := 0; constraint_i < cg.constraints; constraint_i++ {
 		constraints[constraint_i+1] = cg.boolConstraints[constraint_i].string()
 	}
 	fmt.Fprintln(w, strings.Join(constraints, "\t"))

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
+	"strings"
 )
 
 const laVersion = "v2.0"
@@ -34,7 +36,7 @@ func NewLocatingArrayFromFactors(factors int, levelCounts []int) *LocatingArray 
 		factors:    factors,
 		t:          1,
 		nConGroups: 0,
-		conGroups:  make([]*ConstraintGroup, nConGroups),
+		conGroups:  make([]*ConstraintGroup, 0),
 	}
 
 	factorGrouping := make([]*GroupingInfo, factors)
@@ -101,7 +103,7 @@ func NewLocatingArrayFromFile(filePath, factorDataFile string) *LocatingArray {
 			words := strings.Fields(scanner.Text())
 
 			// load the level counts for the factors
-			for factor_i := 0; factor_i < factors; factor_i++ {
+			for factor_i := 0; factor_i < l.factors; factor_i++ {
 				l.factorGrouping[factor_i] = &GroupingInfo{}
 
 				levels, err := strconv.Atoi(words[factor_i])
@@ -111,7 +113,8 @@ func NewLocatingArrayFromFile(filePath, factorDataFile string) *LocatingArray {
 
 				l.factorGrouping[factor_i].levels = levels
 			}
-		} else if 3 <= i <= 2+factors {
+		} else if 3 <= i && i <= 2+l.factors {
+			factor_i := i
 			// load the grouping for the factors
 			words := strings.Fields(scanner.Text())
 
@@ -124,7 +127,7 @@ func NewLocatingArrayFromFile(filePath, factorDataFile string) *LocatingArray {
 
 			if l.factorGrouping[factor_i].grouped {
 				// allocate array for level grouping
-				l.factorGrouping[factor_i].levelGroups = make([]byte, l.factorGrouping[factor_i].levels)
+				l.factorGrouping[factor_i].levelGroups = make([]int, l.factorGrouping[factor_i].levels)
 
 				for level_i := 0; level_i < l.factorGrouping[factor_i].levels; level_i++ {
 					// load level group
@@ -132,7 +135,7 @@ func NewLocatingArrayFromFile(filePath, factorDataFile string) *LocatingArray {
 					if err != nil {
 						log.Fatal(err)
 					}
-					l.factorGrouping[factor_i].levelGroups[level_i] = byte(levelGroup)
+					l.factorGrouping[factor_i].levelGroups[level_i] = levelGroup
 				}
 			}
 
@@ -144,7 +147,7 @@ func NewLocatingArrayFromFile(filePath, factorDataFile string) *LocatingArray {
 			} else {
 				l.factorData = NewFactorDataFromFile(factorDataFile)
 			}
-		} else if i == 3+factors {
+		} else if i == 3+l.factors {
 			// load constraint groups
 			nConGroups, err := strconv.Atoi(scanner.Text())
 			if err != nil {
@@ -160,12 +163,12 @@ func NewLocatingArrayFromFile(filePath, factorDataFile string) *LocatingArray {
 		} else {
 			// load the tests now
 			for test_i := 0; test_i < l.tests; test_i++ {
-				levelRow := make([]byte, l.factors)
+				levelRow := make([]int, l.factors)
 
 				words := strings.Fields(scanner.Text())
 
 				// now load each factor level for this specific test
-				for factor_i := 0; factor_i < factors; factor_i++ {
+				for factor_i := 0; factor_i < l.factors; factor_i++ {
 					factor, err := strconv.Atoi(words[factor_i])
 					if err != nil {
 						log.Fatal(err)
@@ -179,14 +182,16 @@ func NewLocatingArrayFromFile(filePath, factorDataFile string) *LocatingArray {
 		}
 		i++
 	}
+
+	return l
 }
 
-func (l *LocatingArray) addLevelRow(levelRow []byte) {
+func (l *LocatingArray) addLevelRow(levelRow []int) {
 	l.levels = append(l.levels, levelRow)
 	l.tests++
 }
 
-func (l *LocatingArray) remLevelRow() []byte {
+func (l *LocatingArray) remLevelRow() []int {
 	levelRow := l.levels[len(l.levels)-1]
 	l.levels = l.levels[:len(l.levels)-1]
 	l.tests--
@@ -241,24 +246,28 @@ func (l *LocatingArray) writeToFile(filePath string) {
 	fmt.Fprintln(w, fmt.Sprintf("%d \t %d", l.tests, l.factors))
 
 	// write the level counts for the factors
-	levelCounts := make([]int, l.factors)
-	for factor_i := 0; factor_i < factors; factor_i++ {
-		levelCounts[factor_i] = l.factorGrouping[factor_i].levels
+	levelCounts := make([]string, l.factors)
+	for factor_i := 0; factor_i < l.factors; factor_i++ {
+		levelCounts[factor_i] = string(l.factorGrouping[factor_i].levels)
 	}
 	fmt.Fprintln(w, strings.Join(levelCounts, "\t"))
 
 	// write the grouping for the factors
-	for factor_i = 0; factor_i < factors; factor_i++ {
-		levelGroups := make([]int, l.factorGrouping[factor_i].levels+1)
+	for factor_i := 0; factor_i < l.factors; factor_i++ {
+		levelGroups := make([]string, l.factorGrouping[factor_i].levels+1)
 
 		// load grouped bool
-		levelGroups[0] = l.factorGrouping[factor_i].grouped
+		if l.factorGrouping[factor_i].grouped {
+			levelGroups[0] = "1"
+		} else {
+			levelGroups[0] = "0"
+		}
 
 		// check grouping
 		if l.factorGrouping[factor_i].grouped {
-			for level_i := 0; level_i < factorGrouping[factor_i].levels; level_i++ {
+			for level_i := 0; level_i < l.factorGrouping[factor_i].levels; level_i++ {
 				// write level group
-				levelGroups[level_i+1] = l.factorGrouping[factor_i].levelGroups[level_i]
+				levelGroups[level_i+1] = string(l.factorGrouping[factor_i].levelGroups[level_i])
 			}
 		}
 		fmt.Fprintln(w, strings.Join(levelGroups, "\t"))
@@ -271,11 +280,11 @@ func (l *LocatingArray) writeToFile(filePath string) {
 	}
 
 	// write the tests now
-	levelMatrix := getLevelMatrix()
-	for test_i := 0; test_i < tests; test_i++ {
+	levelMatrix := l.getLevelMatrix()
+	for test_i := 0; test_i < l.tests; test_i++ {
 		levelFactors := make([]byte, l.factors)
 		// now write each factor level for this specific test
-		for factor_i = 0; factor_i < factors; factor_i++ {
+		for factor_i = 0; factor_i < l.factors; factor_i++ {
 			levelFactors[factor_i] = levelMatrix[test_i][factor_i]
 		}
 		fmt.Fprintln(w, strings.Join(levelFactors, "\t"))

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -13,7 +14,7 @@ type Factor struct {
 	levels      int       // level count
 	numeric     bool      // is numeric
 	levelNames  []string  // names of the levels
-	levelValues []float32 // values of the levels (NULL if numeric is false)
+	levelValues []float64 // values of the levels (NULL if numeric is false)
 }
 
 type FactorData struct {
@@ -57,8 +58,8 @@ func NewFactorDataFromArray(arrayInfo []*GroupingInfo, factorCount int) *FactorD
 	return &FactorData{factorCount, factors}
 }
 
-func NewFactorDataFromFile(file string) *FactorData {
-	file, err := os.Open(file)
+func NewFactorDataFromFile(filePath string) *FactorData {
+	file, err := os.Open(filePath)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -115,7 +116,7 @@ func NewFactorDataFromFile(file string) *FactorData {
 			// read the level values if they are numeric
 			if factor.numeric {
 				// allocate memory for each level value
-				factor.levelValues = make([]float32, factor.levels)
+				factor.levelValues = make([]float64, factor.levels)
 
 				// read individual level values
 				factor.levelNames = words[4+factor.levels : 4+2*factor.levels]
@@ -145,7 +146,7 @@ func (f *FactorData) getFactorLevelName(factor_i, level_i int) string {
 	return f.factors[factor_i].levelNames[level_i]
 }
 
-func (f *FactorData) getNumericFactorLevel(factor_i, level_i int) float32 {
+func (f *FactorData) getNumericFactorLevel(factor_i, level_i int) float64 {
 	if f.factors[factor_i].numeric {
 		return f.factors[factor_i].levelValues[level_i]
 	} else {
