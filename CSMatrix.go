@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"container/list"
 	"fmt"
 	"log"
 	"math"
@@ -141,7 +140,7 @@ func newCSMatrix(locatingArray *LocatingArray) *CSMatrix {
 
 	}
 
-	lastOneWay_i := col_i
+	// lastOneWay_i := col_i
 
 	// initialize 1st level mapping
 	csm.mapping.mapping = make([]*Mapping, col_i-1)
@@ -294,6 +293,12 @@ func (csm *CSMatrix) addTWayInteractions(csColA *CSCol, colBMax_i int, col_i *in
 				mapping[colB_i].mapping, sumOfSquares, groupingInfo, levelMatrix)
 		}
 
+		// deallocate the column if not added to CS matrix
+		if !colAddedToMatrix {
+			csCol.setting = nil
+			csCol = nil
+		}
+
 	}
 }
 
@@ -331,7 +336,7 @@ func (csm *CSMatrix) populateColumnData(csCol *CSCol, levelMatrix [][]int, row_t
 }
 
 func (csm *CSMatrix) reorderRows(k, c int) {
-	var settingToResample []*FactorSetting
+	var settingToResample *FactorSetting
 	var nPaths int
 	var score int64
 	cols := csm.getCols()
@@ -360,10 +365,9 @@ func (csm *CSMatrix) reorderRows(k, c int) {
 			rowContributions[row_i] = 0
 		}
 
-		csm.pathSort(array, list.Element{Value: *path}, 0, &nPaths, nil)
+		csm.pathSort(array, path, 0, &nPaths, nil)
 
 		score = 0
-		var settingToResample *FactorSetting
 		csm.pathLAChecker(array, path, path, 0, k, &score, &settingToResample, rowContributions)
 		csm.minCountCheck(array, c, &score, &settingToResample, rowContributions)
 
@@ -487,11 +491,30 @@ func (csm *CSMatrix) performCheck(k, c int) {
 	conGroups := csm.locatingArray.getConGroups()
 	var score int64
 
+	//file, err := os.Create("out")
+	//if err != nil {
+	//	log.Fatal(err)
+	//}
+	//defer file.Close()
+	//
+	//w := bufio.NewWriter(file)
+
 	// create a work array
 	array := make([]*CSCol, csm.getCols())
 	for col_i := 0; col_i < csm.getCols(); col_i++ {
 		array[col_i] = csm.data[col_i]
+		//for i := 109 - 1; i >= 0; i-- {
+		//	fmt.Fprintf(w, "%v ", array[col_i].dataP[i])
+		//}
+		//fmt.Fprintf(w, "\n\n")
 	}
+
+	//w.Flush()
+
+	//fmt.Println("Init")
+	//for i := 109 - 1; i >= 0; i-- {
+	//	fmt.Printf("%v ", array[300].dataP[i])
+	//}
 
 	coverableMin := csm.sortByCoverable(array, 0, csm.getCols()-1)
 	fmt.Println("Coverable columns begin at: ", coverableMin)
@@ -503,19 +526,20 @@ func (csm *CSMatrix) performCheck(k, c int) {
 	path.min = coverableMin
 	path.max = csm.getCols() - 1
 
-	pathList := list.New()
+	var pathList []*Path
+	// pathList := list.New()
 
 	nPaths := 0
 
 	// grab initial time
 	start := time.Now()
-	csm.pathSort(array, list.Element{Value: *path}, 0, &nPaths, pathList)
+	csm.pathSort(array, path, 0, &nPaths, &pathList)
 	// check current time
 	elapsedTime := time.Since(start).Seconds()
 	fmt.Println("Elapsed for path sort: ", elapsedTime)
 
-	fmt.Println("Memory check: nPaths = ", nPaths, " of size ", unsafe.Sizeof(path))
-	fmt.Println("Unfinished paths: ", pathList.Len())
+	fmt.Println("Memory check: nPaths = ", nPaths, " of size ", unsafe.Sizeof(*path))
+	fmt.Println("Unfinished paths: ", len(pathList))
 
 	// grab initial time
 	start = time.Now()
@@ -594,8 +618,8 @@ func (csm *CSMatrix) autoFindRows(k, c, startRows int) {
 	}
 	fmt.Println("Two-Way Min: ", twoWayMin)
 
-	factors := csm.locatingArray.getFactors()
-	nPaths := 0
+	// factors := csm.locatingArray.getFactors()
+	// nPaths := 0
 	var score int64
 	var settingToResample *FactorSetting
 
@@ -616,11 +640,11 @@ func (csm *CSMatrix) autoFindRows(k, c, startRows int) {
 
 			csm.randomizeArray(array)
 
-			pathList := list.New()
-			pathList.PushFront(path)
+			var pathList []*Path
+			pathList = append(pathList, path)
 
 			score = 0
-			csm.randomizePaths(array, &settingToResample, path, 0, k, c, &score, pathList, iters)
+			csm.randomizePaths(array, &settingToResample, path, 0, k, c, &score, &pathList, iters)
 
 			fmt.Println("Score: ", score)
 
@@ -677,8 +701,8 @@ func (csm *CSMatrix) randomFix(k, c, totalRows int) {
 	tWayMin := csm.sortByTWayInteraction(array, coverableMin, cols-1)
 	fmt.Println("t-way interactions begin at: ", tWayMin)
 
-	factors := csm.locatingArray.getFactors()
-	nPaths := 0
+	// factors := csm.locatingArray.getFactors()
+	// nPaths := 0
 	var score int64
 	var settingToResample *FactorSetting
 
@@ -689,11 +713,11 @@ func (csm *CSMatrix) randomFix(k, c, totalRows int) {
 	// add more rows to reach total count
 	csm.resizeArray(array, totalRows)
 
-	pathList := list.New()
-	pathList.PushFront(path)
+	var pathList []*Path
+	pathList = append(pathList, path)
 
 	score = 0
-	csm.randomizePaths(array, &settingToResample, path, 0, k, c, &score, pathList, iters)
+	csm.randomizePaths(array, &settingToResample, path, 0, k, c, &score, &pathList, iters)
 
 	csm.minCountCheck(array, c, &score, &settingToResample, nil)
 
@@ -724,12 +748,12 @@ func (csm *CSMatrix) systematicRandomFix(k, c, initialRows, minChunk int) {
 	path.min = coverableMin
 	path.max = csm.getCols() - 1
 
-	pathList := list.New()
+	var pathList []*Path
 
 	nPaths := 0
-	csm.pathSort(array, list.Element{Value: *path}, 0, &nPaths, pathList)
+	csm.pathSort(array, path, 0, &nPaths, &pathList)
 	fmt.Println("nPaths: ", nPaths, " of size ", unsafe.Sizeof(path))
-	fmt.Println("Unfinished paths: ", pathList.Len())
+	fmt.Println("Unfinished paths: ", len(pathList))
 
 	var score int64
 
@@ -745,12 +769,12 @@ func (csm *CSMatrix) systematicRandomFix(k, c, initialRows, minChunk int) {
 	fmt.Println("Elapsed: ", elapsedTime)
 
 	fmt.Println("Score: ", score)
-	factors := csm.locatingArray.getFactors()
+	// factors := csm.locatingArray.getFactors()
 
 	for settingToResample != nil {
 		csm.resizeArray(array, totalRows)
 
-		csm.randomizePaths(array, &settingToResample, path, finalizedRows, k, c, &score, pathList, 1000)
+		csm.randomizePaths(array, &settingToResample, path, finalizedRows, k, c, &score, &pathList, 1000)
 		finalizedRows = csm.rows
 
 		chunk -= chunk / 2
@@ -763,8 +787,7 @@ func (csm *CSMatrix) systematicRandomFix(k, c, initialRows, minChunk int) {
 }
 
 func (csm *CSMatrix) randomizePaths(array []*CSCol, settingToResample **FactorSetting, path *Path, row_top int,
-	k int, c int, score *int64, pathList *list.List, iters int) {
-	cols := csm.getCols()
+	k int, c int, score *int64, pathList *[]*Path, iters int) {
 	var newScore int64
 	var nPaths int
 	var factor_i int
@@ -785,9 +808,9 @@ func (csm *CSMatrix) randomizePaths(array []*CSCol, settingToResample **FactorSe
 	}
 
 	// sort paths
-	for e := pathList.Front(); e != nil; e = e.Next() {
-		nPaths := 0
-		csm.pathSort(array, *e, row_top, &nPaths, nil)
+	for _, e := range *pathList {
+		nPaths = 0
+		csm.pathSort(array, e, row_top, &nPaths, nil)
 	}
 
 	// run initial checker
@@ -860,24 +883,24 @@ func (csm *CSMatrix) randomizePaths(array []*CSCol, settingToResample **FactorSe
 		}
 
 		// grab initial time
-		start := time.Now()
+		// start := time.Now()
 		// sort paths and recheck score
-		for e := pathList.Front(); e != nil; e = e.Next() {
+		for _, e := range *pathList {
 			nPaths := 0
-			csm.pathSort(array, *e, row_top, &nPaths, nil)
+			csm.pathSort(array, e, row_top, &nPaths, nil)
 		}
 
-		elapsedTime := time.Since(start).Seconds()
+		// elapsedTime := time.Since(start).Seconds()
 		//		cout << "Elapsed After Sort: " << elapsedTime << endl;
 
 		newScore = 0
 		var newSettingToResample *FactorSetting
 
 		// grab initial time
-		start = time.Now()
+		// start = time.Now()
 		csm.pathLAChecker(array, path, path, 0, k, &newScore, &newSettingToResample, nil)
 		csm.minCountCheck(array, c, &newScore, &newSettingToResample, nil)
-		elapsedTime = time.Since(start).Seconds()
+		// elapsedTime = time.Since(start).Seconds()
 		//		cout << "Elapsed After Checker: " << elapsedTime << endl;
 
 		if newScore <= *score { // add "|| true" to cause every change to be implemented, not just improving changes
@@ -935,14 +958,16 @@ func (csm *CSMatrix) randomizePaths(array []*CSCol, settingToResample **FactorSe
 	}
 
 	// perform one last sort and save final unfinished paths to list
-	newPathList := list.New() // list <Path*>newPathList(*pathList);
-	newPathList.PushFrontList(pathList)
-	pathList = pathList.Init() // newPathList
+	//newPathList := list.New() // list <Path*>newPathList(*pathList);
+	//newPathList.PushFrontList(pathList)
+	//pathList = pathList.Init() // newPathList
 
+	newPathList := make([]*Path, len(*pathList))
+	copy(newPathList, *pathList)
 	// sort paths and recheck score
-	for e := newPathList.Front(); e != nil; e = e.Next() {
+	for _, e := range newPathList {
 		nPaths := 0
-		csm.pathSort(array, *e, row_top, &nPaths, pathList)
+		csm.pathSort(array, e, row_top, &nPaths, pathList)
 	}
 
 	*score = 0
@@ -958,7 +983,7 @@ func (csm *CSMatrix) randomizeRows(backupArray []*CSCol, array []*CSCol, csScore
 	var factor_i int
 	var resampleFactor int
 
-	var settingToResample *FactorSetting
+	// var settingToResample *FactorSetting
 
 	levelMatrix := csm.locatingArray.getLevelMatrix()
 
@@ -1062,7 +1087,7 @@ func (csm *CSMatrix) repopulateColumns(setFactor_i int, setLevel_i int, maxFacto
 	}
 
 	var minFactor_i int
-	var minLevel_i, maxLevel_i int
+	// var minLevel_i, maxLevel_i int
 
 	if setFactor_i > maxFactor_i {
 		minFactor_i = t - 1
@@ -1199,6 +1224,7 @@ func (csm *CSMatrix) addOneWayInteraction(factor_i int, level_i int, levelMatrix
 	}
 
 	// push into vector
+	csm.data = append(csm.data, csCol)
 	// TODO csm.data.push_back(csCol)
 	*sumOfSquares = append(*sumOfSquares, sum)
 }
@@ -1386,8 +1412,8 @@ func (csm *CSMatrix) sortByTWayInteraction(array []*CSCol, min int, max int) int
 	return tempMin + 1
 }
 
-func (csm *CSMatrix) pathSort(array []*CSCol, e list.Element, row_i int, nPaths *int, pathList *list.List) {
-	var path *Path = e.Value.(*Path)
+func (csm *CSMatrix) pathSort(array []*CSCol, path *Path, row_i int, nPaths *int, pathList *[]*Path) {
+	//fmt.Println(path.min, path.max)
 	if path.min == path.max {
 		csm.deletePath(path.entryA)
 		csm.deletePath(path.entryB)
@@ -1397,7 +1423,7 @@ func (csm *CSMatrix) pathSort(array []*CSCol, e list.Element, row_i int, nPaths 
 	} else if row_i >= csm.rows {
 		// add to list
 		if pathList != nil {
-			pathList.PushFront(path)
+			*pathList = append(*pathList, path)
 		}
 
 		return
@@ -1405,6 +1431,12 @@ func (csm *CSMatrix) pathSort(array []*CSCol, e list.Element, row_i int, nPaths 
 
 	tempMin := path.min - 1
 	tempMax := path.max + 1
+	//fmt.Println("DEBUG ", tempMin, tempMax)
+
+	//fmt.Println("Before")
+	//for i := 109 - 1; i >= 0; i-- {
+	//	fmt.Printf("%v ", array[300].dataP[i])
+	//}
 
 	for {
 		for tempMin < path.max && array[tempMin+1].dataP[row_i] == ENTRY_A {
@@ -1415,11 +1447,17 @@ func (csm *CSMatrix) pathSort(array []*CSCol, e list.Element, row_i int, nPaths 
 		}
 
 		if tempMax-1 > tempMin+1 {
+			//fmt.Println(tempMin, tempMax)
 			csm.swapColumns(array, tempMin+1, tempMax-1)
 		} else {
 			break
 		}
 	}
+
+	//fmt.Println("After")
+	//for i := 109 - 1; i >= 0; i-- {
+	//	fmt.Printf("%v ", array[300].dataP[i])
+	//}
 
 	// verification
 	for col_i := path.min; col_i <= tempMin; col_i++ {
@@ -1450,7 +1488,7 @@ func (csm *CSMatrix) pathSort(array []*CSCol, e list.Element, row_i int, nPaths 
 		path.entryA.max = tempMin
 
 		// sort path for entryA
-		csm.pathSort(array, list.Element{Value: *path.entryA}, row_i+1, nPaths, pathList)
+		csm.pathSort(array, path.entryA, row_i+1, nPaths, pathList)
 	} else {
 		// delete unnecessary path for entryA
 		csm.deletePath(path.entryA)
@@ -1471,7 +1509,7 @@ func (csm *CSMatrix) pathSort(array []*CSCol, e list.Element, row_i int, nPaths 
 		path.entryB.max = path.max
 
 		// sort path for entryB
-		csm.pathSort(array, list.Element{Value: *path.entryB}, row_i+1, nPaths, pathList)
+		csm.pathSort(array, path.entryB, row_i+1, nPaths, pathList)
 	} else {
 		csm.deletePath(path.entryB)
 		path.entryB = nil
@@ -1802,7 +1840,8 @@ func (csm *CSMatrix) remRow(array []*CSCol) {
 	csm.rows--
 
 	levelRow := csm.locatingArray.remLevelRow()
-	// delete levelRow;
+	levelRow = nil
+	_ = levelRow
 
 	// remove a row from each column of the CS matrix
 	for col_i := 0; col_i < csm.getCols(); col_i++ {
@@ -2027,7 +2066,7 @@ func (csm *CSMatrix) addRowFix(array []*CSCol, csScore *int64) {
 			if duplicate && csCol.dataP[csm.rows-1] != 1 && csCol.factors > 0 {
 
 				// grab duplicate column
-				csDup := array[col_i+1]
+				// csDup := array[col_i+1]
 
 				// the goal is to make the last row of csCol be a 1
 				// all factors must be changed, check if this change conflicts with finalized factors
@@ -2146,11 +2185,34 @@ func (csm *CSMatrix) getArrayScore(array []*CSCol) int64 {
 		squaredSum int64 = 0
 	)
 
+	file, err := os.Create("out")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer file.Close()
+
+	w := bufio.NewWriter(file)
+
 	for col_i := 0; col_i < csm.getCols()-1; col_i++ {
 
 		// increment streak
 		streak++
 
+		if col_i== 300 {
+			fmt.Fprintln(w, "col1 ")
+			for i := 109 - 1; i >= 0; i-- {
+				fmt.Fprintf(w, "%v ", array[col_i].dataP[i])
+			}
+			fmt.Fprintf(w, "\n")
+			fmt.Fprintln(w, "col2 ")
+			for i := 109 - 1; i >= 0; i-- {
+				fmt.Fprintf(w, "%v ", array[col_i+1].dataP[i])
+			}
+			fmt.Fprintf(w, "\n")
+			fmt.Fprintln(w, "")
+
+			w.Flush()
+		}
 		// check if the streak ended
 		if csm.compare(array[col_i], array[col_i+1], 0, csm.rows) < 0 {
 			squaredSum += streak * streak
@@ -2158,9 +2220,9 @@ func (csm *CSMatrix) getArrayScore(array []*CSCol) int64 {
 		} else if csm.compare(array[col_i], array[col_i+1], 0, csm.rows) > 0 {
 			fmt.Println("Mistake in CS matrix at column: ", col_i)
 		} else {
-			if csm.checkDistinguishable(array[col_i], array[col_i+1]) {
-				// cout << "Duplicates found: " << getColName(array[col_i]) << " vs " << getColName(array[col_i + 1]) << endl;
-			}
+			//if csm.checkDistinguishable(array[col_i], array[col_i+1]) {
+			//	// cout << "Duplicates found: " << getColName(array[col_i]) << " vs " << getColName(array[col_i + 1]) << endl;
+			//}
 		}
 	}
 

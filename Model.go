@@ -130,7 +130,7 @@ func newDuplicateModel(model *Model) *Model {
 
 // print the model factors' names
 func (m *Model) printModelFactors() {
-	var factor1i, factor2i, level1, level2 int
+	// var factor1i, factor2i, level1, level2 int
 
 	// print out the number of terms
 	fmt.Println("Model with ", m.terms, " terms")

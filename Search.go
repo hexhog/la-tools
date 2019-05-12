@@ -2,11 +2,12 @@ package main
 
 import (
 	"bufio"
-	"container/list"
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -22,21 +23,21 @@ func loadResponseVector(response *VectorXf, directory string, column string, per
 		log.Fatal(err)
 	}
 
-	var cols, col_i int
-	var header string
+	var col_i int
+	// var header string
 
 	rows := response.getLength()
 
-	var tempString string
-	var tempFloat float32
+	// var tempString string
+	var tempFloat float64
 	var tempInt int
 
 	// the response count vector
 	responseCount := NewVectorXf(rows)
 
 	// grab data vectors
-	data = response.getData()
-	responseData = responseCount.getData()
+	data := response.getData()
+	responseData := responseCount.getData()
 
 	// initialize vectors
 	for row_i := 0; row_i < rows; row_i++ {
@@ -70,8 +71,8 @@ func loadResponseVector(response *VectorXf, directory string, column string, per
 				}
 			} else if i == 1 {
 				// find the relevant column
-				line := ""
-				value := ""
+				// line := ""
+				// value := ""
 				words := strings.Fields(scanner.Text()) // terminating new line of rows // headers
 
 				for tcol_i, value := range words {
@@ -80,7 +81,9 @@ func loadResponseVector(response *VectorXf, directory string, column string, per
 						break
 					}
 				}
-			} else if 2 <= i < 2+rows {
+			} else if 2 <= i && i < 2+rows {
+				row_i := i
+
 				// ensure we found the relevant column
 				if col_i == -1 {
 					fmt.Println("Could not find column \"", column, "\" in \"", file, "\"")
@@ -89,12 +92,12 @@ func loadResponseVector(response *VectorXf, directory string, column string, per
 					data := response.getData()
 					words := strings.Fields(scanner.Text())
 
-					for tcol_i, value := range words {
+					for tcol_i, word := range words {
 						if tcol_i == col_i {
-							if value == "" {
+							if word == "" {
 								fmt.Println("No value found")
 							} else {
-								tempFloat, err := strconv.ParseFloat(word, 32)
+								tempFloat, err = strconv.ParseFloat(word, 32)
 								if err != nil {
 									log.Fatal(err)
 								}
@@ -106,7 +109,7 @@ func loadResponseVector(response *VectorXf, directory string, column string, per
 								// process the data
 								responseData[row_i] += 1
 								if performLog {
-									data[row_i] += log(tempFloat)
+									data[row_i] += math.Log(tempFloat)
 								} else {
 									data[row_i] += tempFloat
 								}
@@ -115,13 +118,14 @@ func loadResponseVector(response *VectorXf, directory string, column string, per
 					}
 				}
 			}
+			i++
 		}
 	}
 
 	// average the responses
 	data = response.getData()
-	var minResponse float32 = data[0] / responseData[0]
-	var maxResponse float32 = data[0] / responseData[0]
+	var minResponse float64 = data[0] / responseData[0]
+	var maxResponse float64 = data[0] / responseData[0]
 	for row_i := 0; row_i < rows; row_i++ {
 		data[row_i] /= responseData[row_i]
 		//cout << data[row_i] << " from " << responseData[row_i] << " responses " << endl;
@@ -135,8 +139,8 @@ func loadResponseVector(response *VectorXf, directory string, column string, per
 	}
 
 	// add noise as necessary
-	var _range float32 = maxResponse - minResponse
-	if noise != NULL {
+	var _range float64 = maxResponse - minResponse
+	if noise != nil {
 		for row_i := 0; row_i < rows; row_i++ {
 			data[row_i] = noise.addNoise(data[row_i], _range)
 		}
@@ -153,12 +157,13 @@ func compareOccurrence(first, second *Occurrence) bool {
 	return (first.count < second.count)
 }
 
-func allocateOccurrences(occurrence *Occurrence, t int, factors int, occurrenceLists *list) {
+func allocateOccurrences(occurrence *Occurrence, t int, factors int, occurrenceLists *[][]*Occurrence) {
 
 	// no more factors or interactions to allocate for
 	if factors == 0 || t == 0 {
 		// occurrence.list = nil;
-		return
+		occurrence.list = nil
+		// return occurrenceLists
 	}
 
 	// allocate memory for the next dimension of occurrences
@@ -166,7 +171,6 @@ func allocateOccurrences(occurrence *Occurrence, t int, factors int, occurrenceL
 
 	for factor_i := 0; factor_i < factors; factor_i++ {
 		// initialize occurrence
-		occurrence.list[factor_i].factorList = make([]int, occurrence.factorList_n+1)
 		occurrence.list[factor_i].factorList = make([]int, occurrence.factorList_n+1)
 		occurrence.list[factor_i].factorList_n = occurrence.factorList_n + 1
 		occurrence.list[factor_i].count = 0
@@ -179,14 +183,14 @@ func allocateOccurrences(occurrence *Occurrence, t int, factors int, occurrenceL
 		occurrence.list[factor_i].factorList[occurrence.factorList_n] = factor_i
 
 		// push new occurrence into list
-		occurrenceLists[occurrence.factorList_n].PushBack(&occurrence.list[factor_i])
+		(*occurrenceLists)[occurrence.factorList_n] = append((*occurrenceLists)[occurrence.factorList_n], &occurrence.list[factor_i])
 
 		// allocate the next dimension
 		allocateOccurrences(&occurrence.list[factor_i], t-1, factor_i, occurrenceLists)
 	}
 }
 
-func deallocateOccurrences(occurrence *Occurrence, int factors) {
+func deallocateOccurrences(occurrence *Occurrence, factors int) {
 
 	if occurrence != nil && occurrence.list != nil {
 
@@ -220,7 +224,7 @@ func deallocateOccurrences(occurrence *Occurrence, int factors) {
 // struct for linked list of top columns of CS matrix
 type ColDetails struct {
 	termIndex  int
-	dotProduct float32
+	dotProduct float64
 	used       bool
 } // *colDetails;
 
@@ -237,7 +241,7 @@ func createModels(locatingArray *LocatingArray, response *VectorXf, csMatrix *CS
 
 	// populate initial top models
 	topModels[0] = newModel(response, maxTerms, csMatrix)
-	for model_i = 1; model_i < models_n; model_i++ {
+	for model_i := 1; model_i < models_n; model_i++ {
 		topModels[model_i] = nil
 	}
 
@@ -278,7 +282,7 @@ func createModels(locatingArray *LocatingArray, response *VectorXf, csMatrix *CS
 			// find the columns with the largest dot products (at most as many as we have models)
 			for colsUsed := 0; colsUsed < newModels_n; colsUsed++ {
 
-				var largestDotProduct float32
+				var largestDotProduct float64
 				bestCol_i := -1
 
 				// find the unused column with smallest distance
@@ -333,7 +337,7 @@ func createModels(locatingArray *LocatingArray, response *VectorXf, csMatrix *CS
 						}
 
 						// insert the new next top model
-						nextTopModels[models_n-1] = newModel(model)
+						nextTopModels[models_n-1] = newDuplicateModel(model)
 					}
 
 					// perform swapping to maintain sorted list
@@ -365,7 +369,7 @@ func createModels(locatingArray *LocatingArray, response *VectorXf, csMatrix *CS
 		}
 
 		// find the top model
-		if topModels[0] != NULL {
+		if topModels[0] != nil {
 			fmt.Println("Top Model (", topModels[0].getRSquared(), "):")
 			topModels[0].printModelFactors()
 		} else {
@@ -377,14 +381,17 @@ func createModels(locatingArray *LocatingArray, response *VectorXf, csMatrix *CS
 	// delete[] colDetails;
 
 	// count occurrences
-	occurrence = *Occurrence{}
-	occurrence.factorList = make([]int)
+	var occurrence *Occurrence
+	occurrence.factorList = make([]int, 0)
 	occurrence.factorList_n = 0
 	occurrence.count = 0
 	occurrence.magnitude = 0
 	// list<Occurrence*> *occurrenceLists = new list<Occurrence*>[locatingArray->getT()];
-	occurrenceLists = list.New()
-	allocateOccurrences(occurrence, locatingArray.getT(), locatingArray.getFactors(), occurrenceLists)
+	occurrenceLists := make([][]*Occurrence, locatingArray.getT())
+	for i := range occurrenceLists {
+		occurrenceLists[i] = make([]*Occurrence, 0)
+	}
+	allocateOccurrences(occurrence, locatingArray.getT(), locatingArray.getFactors(), &occurrenceLists)
 
 	fmt.Println("")
 	fmt.Println("Final Models Ranking: ")
@@ -406,25 +413,27 @@ func createModels(locatingArray *LocatingArray, response *VectorXf, csMatrix *CS
 	fmt.Println("Occurrence Counts")
 	for t := 0; t < locatingArray.getT(); t++ {
 
-		occurrenceLists[t].sort(compareOccurrence)
-		occurrenceLists[t].reverse()
+		sort.Sort(ByCount(occurrenceLists[t]))
+		for i, j := 0, len(occurrenceLists[t])-1; i < j; i, j = i+1, j-1 {
+			occurrenceLists[t][i], occurrenceLists[t][j] = occurrenceLists[t][j], occurrenceLists[t][i]
+		}
 
 		// print out the headers
 		// cout << setw(10) << right << "Count" << " | " << setw(15) << "Magnitude" << " | " << "Factor Combination" << endl;
 		// cout << setw(10) << setfill('-') << "" << " | " <<
 		// 		setw(15) << setfill('-') << "" << " | " <<
 		// 		setw(20) << setfill('-') << "" << setfill(' ') << endl;
-		fmt.Println(right, "Count", " | ", "Magnitude", " | ", "Factor Combination")
+		fmt.Println("Count", " | ", "Magnitude", " | ", "Factor Combination")
 		fmt.Println("", " | ", "", " | ", "")
 
 		// print out each count
-		for e := occurrenceLists[t].Front(); e != nil; e = e.Next() {
+		for _, e := range occurrenceLists[t] {
 			// only print the count if it has a count
 			if e.count > 0 {
 				// cout << setw(10) << right << (*it)->count << " | ";
 				// cout << setw(15) << right << (*it)->magnitude << " | ";
-				fmt.Printf(e.count, " | ")
-				fmt.Printf(e.magnitude, " | ")
+				fmt.Printf("%d | ", e.count)
+				fmt.Printf("%f, | ", e.magnitude)
 
 				// print out the factor combination names
 				for factorList_i := 0; factorList_i < e.factorList_n; factorList_i++ {
@@ -453,6 +462,11 @@ func createModels(locatingArray *LocatingArray, response *VectorXf, csMatrix *CS
 }
 
 func main() {
+	//search([]string{"LA/LA_SMALL.tsv", "FD/Factors_SMALL.tsv"})
+	search([]string{"LA/LA_SMALL.tsv", "", "checkla", "1", "3"})
+}
+
+func search(args []string) {
 
 	//LocatingArray *array = new LocatingArray("LA_SMALL.tsv");
 	//FactorData *factorData = new FactorData("Factors_SMALL.tsv");
@@ -467,7 +481,7 @@ func main() {
 	// cout << "Seed:\t" << seed << endl;
 	// srand(seed);
 
-	args := os.Args[1:]
+	//args := os.Args[1:]
 
 	// 	if (argc < 3) {
 	// 		cout << "Usage: " << argv[0] << " [LocatingArray.tsv] ([FactorData.tsv]) ..." << endl;
@@ -475,196 +489,198 @@ func main() {
 	// 	}
 
 	var noise *Noise
-	array := newLocatingArray(args[0], args[1])
+	array := NewLocatingArrayFromFile(args[0], args[1])
 
-	matrix = newCSMatrix(array)
+	matrix := newCSMatrix(array)
 
-	if args[2] == "memchk" {
-		fmt.Println("Check memory and press ENTER")
-	} else if args[2] == "analysis" {
-		performLog, err := strconv.ParseBool(args[5])
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		terms_n, err := strconv.Atoi(args[6])
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		models_n, err := strconv.Atoi(args[7])
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		newModels_n, err := strconv.Atoi(args[8])
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		response = newVectorXf(array.getTests())
-		loadResponseVector(response, args[3], args[4], performLog, noise)
-		fmt.Println("Response range: ", response.getData()[0], " to ", response.getData()[response.getLength()-1])
-
-		createModels(array, response, matrix, terms_n, models_n, newModels_n)
-		response = nil
-
-		// cout << "Usage: ... " << argv[arg_i];
-		// cout << " [ResponsesDirectory] [response_column] [1/0 - perform log on responses] [nTerms] [nModels] [nNewModels]" << endl;
-	} else if args[2] == "autofind" {
-		k, err := strconv.Atoi(args[3])
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		c, err := strconv.Atoi(args[4])
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		startRows, err := strconv.Atoi(args[5])
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		matrix.autoFindRows(k, c, startRows)
-
-		// cout << "Usage: ... " << argv[arg_i];
-		// cout << " [k Separation] [c Minimum Count] [Start Rows]" << endl;
-	} else if args[2] == "fixla" {
-		matrix.exactFix()
-		array.writeToFile(args[3])
-
-		// cout << " [FixedOutputLA.tsv]" << endl;
-	} else if args[2] == "model" {
-		responseDir := args[3]
-		responseCol := args[4]
-		terms, err := strconv.Atoi(args[5])
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		coefficients := make([]float32, terms)
-		columns := make([]int, terms)
-
-		i := 5
-		for term_i := 0; term_i < terms; term_i++ {
-			if i+2 < len(args) {
-				coefficients[term_i], err = strconv.ParseFloat(args[i+1], 32)
-				if err != nil {
-					log.Fatal(err)
-				}
-
-				columns[term_i], err = strconv.ParseFloat(args[i+2], 32)
-				if err != nil {
-					log.Fatal(err)
-				}
-			} else {
-				fmt.Println("Terms are missing")
-				coefficients[term_i] = 0
-				columns[term_i] = 0
+	if len(args) > 2 {
+		if args[2] == "memchk" {
+			fmt.Println("Check memory and press ENTER")
+		} else if args[2] == "analysis" {
+			performLog, err := strconv.ParseBool(args[5])
+			if err != nil {
+				log.Fatal(err)
 			}
-			i += 2
+
+			terms_n, err := strconv.Atoi(args[6])
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			models_n, err := strconv.Atoi(args[7])
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			newModels_n, err := strconv.Atoi(args[8])
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			response := NewVectorXf(array.getTests())
+			loadResponseVector(response, args[3], args[4], performLog, noise)
+			fmt.Println("Response range: ", response.getData()[0], " to ", response.getData()[response.getLength()-1])
+
+			createModels(array, response, matrix, terms_n, models_n, newModels_n)
+			response = nil
+
+			// cout << "Usage: ... " << argv[arg_i];
+			// cout << " [ResponsesDirectory] [response_column] [1/0 - perform log on responses] [nTerms] [nModels] [nNewModels]" << endl;
+		} else if args[2] == "autofind" {
+			k, err := strconv.Atoi(args[3])
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			c, err := strconv.Atoi(args[4])
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			startRows, err := strconv.Atoi(args[5])
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			matrix.autoFindRows(k, c, startRows)
+
+			// cout << "Usage: ... " << argv[arg_i];
+			// cout << " [k Separation] [c Minimum Count] [Start Rows]" << endl;
+		} else if args[2] == "fixla" {
+			matrix.exactFix()
+			array.writeToFile(args[3])
+
+			// cout << " [FixedOutputLA.tsv]" << endl;
+		} else if args[2] == "model" {
+			responseDir := args[3]
+			responseCol := args[4]
+			terms, err := strconv.Atoi(args[5])
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			coefficients := make([]float64, terms)
+			columns := make([]int, terms)
+
+			i := 5
+			for term_i := 0; term_i < terms; term_i++ {
+				if i+2 < len(args) {
+					coefficients[term_i], err = strconv.ParseFloat(args[i+1], 32)
+					if err != nil {
+						log.Fatal(err)
+					}
+
+					columns[term_i], err = strconv.Atoi(args[i+2])
+					if err != nil {
+						log.Fatal(err)
+					}
+				} else {
+					fmt.Println("Terms are missing")
+					coefficients[term_i] = 0
+					columns[term_i] = 0
+				}
+				i += 2
+			}
+
+			matrix.writeResponse(responseDir, responseCol, terms, coefficients, columns)
+
+			coefficients = nil
+			columns = nil
+
+			// cout << "Usage: ... " << argv[arg_i];
+			// cout << " [ResponsesDirectory] [response_column] [Terms] [Term 0 coefficient] [Term 0 column] ..." << endl;
+		} else if args[2] == "mtfixla" {
+			k, err := strconv.Atoi(args[3])
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			c, err := strconv.Atoi(args[4])
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			totalRows, err := strconv.Atoi(args[5])
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			matrix.randomFix(k, c, totalRows)
+			array.writeToFile(args[6])
+
+			// cout << "Usage: ... " << argv[arg_i];
+			// cout << " [k Separation] [c Minimum Count] [Total Rows] [FixedOutputLA.tsv]" << endl;
+		} else if args[2] == "sysfixla" {
+			k, err := strconv.Atoi(args[3])
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			c, err := strconv.Atoi(args[4])
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			initialRows, err := strconv.Atoi(args[5])
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			minChunk, err := strconv.Atoi(args[6])
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			matrix.systematicRandomFix(k, c, initialRows, minChunk)
+			array.writeToFile(args[7])
+
+			// cout << "Usage: ... " << argv[arg_i];
+			// cout << " [k Separation] [c Minimum Count] [Initial Rows] [Minimum Chunk] [FixedOutputLA.tsv]" << endl;
+		} else if args[2] == "checkla" {
+			k, err := strconv.Atoi(args[3])
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			c, err := strconv.Atoi(args[4])
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			matrix.performCheck(k, c)
+
+			// cout << "Usage: ... " << argv[arg_i];
+			// cout << " [k Separation] [c Minimum Count]" << endl;
+		} else if args[2] == "noise" {
+			ratio, err := strconv.ParseFloat(args[3], 32)
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			noise = NewNoise(ratio)
+
+			// cout << "Usage: ... " << argv[arg_i];
+			// cout << " [ratio]" << endl;
+		} else if args[2] == "printcs" {
+			fmt.Println("CS Matrix:")
+			matrix.print()
+		} else if args[2] == "reorderrowsla" {
+			k, err := strconv.Atoi(args[3])
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			c, err := strconv.Atoi(args[4])
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			matrix.reorderRows(k, c)
+			array.writeToFile(args[5])
+
+			// cout << "Usage: ... " << argv[arg_i];
+			// cout << " [k Separation] [c Minimum Count] [ReorderedOutputLA.tsv]" << endl;
 		}
-
-		matrix.writeResponse(responseDir, responseCol, terms, coefficients, columns)
-
-		coefficients = nil
-		columns = nil
-
-		// cout << "Usage: ... " << argv[arg_i];
-		// cout << " [ResponsesDirectory] [response_column] [Terms] [Term 0 coefficient] [Term 0 column] ..." << endl;
-	} else if args[2] == "mtfixla" {
-		k, err := strconv.Atoi(args[3])
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		c, err := strconv.Atoi(args[4])
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		totalRows, err := strconv.Atoi(args[5])
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		matrix.randomFix(k, c, totalRows)
-		array.writeToFile(args[6])
-
-		// cout << "Usage: ... " << argv[arg_i];
-		// cout << " [k Separation] [c Minimum Count] [Total Rows] [FixedOutputLA.tsv]" << endl;
-	} else if args[2] == "sysfixla" {
-		k, err := strconv.Atoi(args[3])
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		c, err := strconv.Atoi(args[4])
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		initialRows, err := strconv.Atoi(args[5])
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		minChunk, err := strconv.Atoi(args[6])
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		matrix.systematicRandomFix(k, c, initialRows, minChunk)
-		array.writeToFile(args[7])
-
-		// cout << "Usage: ... " << argv[arg_i];
-		// cout << " [k Separation] [c Minimum Count] [Initial Rows] [Minimum Chunk] [FixedOutputLA.tsv]" << endl;
-	} else if args[2] == "checkla" {
-		k, err := strconv.Atoi(args[3])
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		c, err := strconv.Atoi(args[4])
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		matrix.performCheck(k, c)
-
-		// cout << "Usage: ... " << argv[arg_i];
-		// cout << " [k Separation] [c Minimum Count]" << endl;
-	} else if args[2] == "noise" {
-		ratio, err := strconv.ParseFloat(args[3], 32)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		noise = newNoise(ratio)
-
-		// cout << "Usage: ... " << argv[arg_i];
-		// cout << " [ratio]" << endl;
-	} else if args[2] == "printcs" {
-		fmt.Println("CS Matrix:")
-		matrix.print()
-	} else if args[2] == "reorderrowsla" {
-		k, err := strconv.Atoi(args[3])
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		c, err := strconv.Atoi(args[4])
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		matrix.reorderRows(k, c)
-		array.writeToFile(argv[5])
-
-		// cout << "Usage: ... " << argv[arg_i];
-		// cout << " [k Separation] [c Minimum Count] [ReorderedOutputLA.tsv]" << endl;
 	}
 
 	fmt.Println("")

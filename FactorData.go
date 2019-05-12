@@ -76,7 +76,8 @@ func NewFactorDataFromFile(filePath string) *FactorData {
 	for scanner.Scan() {
 		if i == -1 {
 			// grab the total number of factors
-			factorCount, e = strconv.Atoi(scanner.Text())
+			words := strings.Fields(scanner.Text())
+			factorCount, e = strconv.Atoi(words[0])
 			if e != nil {
 				log.Fatal(e)
 			}

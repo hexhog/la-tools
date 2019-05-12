@@ -9,15 +9,6 @@ import (
 	"strings"
 )
 
-type Result struct {
-	array    *LocatingArray
-	result1  *Result // LHS of Eq equation
-	result2  *Result // RHS of Eq equation
-	operand  string  //
-	value    float64 //
-	factor_i int     //
-}
-
 func newResult(array *LocatingArray, words []string, index *int) *Result {
 	operand := words[*index]
 	*index = *index + 1
@@ -50,6 +41,15 @@ func newResult(array *LocatingArray, words []string, index *int) *Result {
 	}
 
 	return r
+}
+
+type Result struct {
+	array    *LocatingArray
+	result1  *Result // LHS of Eq equation
+	result2  *Result // RHS of Eq equation
+	operand  string  //
+	value    float64 //
+	factor_i int     //
 }
 
 func (op *Result) getResult(test int) float64 {
@@ -324,7 +324,7 @@ func (cg *ConstraintGroup) getResult(test int) bool {
 }
 
 func (cg *ConstraintGroup) randPopulateLevelRow(levelRow []int) {
-	groupingInfo := cg.groupLA.getGroupingInfo()
+	// groupingInfo := cg.groupLA.getGroupingInfo()
 	levelMatrix := cg.groupLA.getLevelMatrix()
 
 	weightRand := rand.Intn(cg.weightRandMax)

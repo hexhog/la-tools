@@ -14,7 +14,7 @@ type VectorXf struct {
 func NewVectorXf(length int) *VectorXf {
 	return &VectorXf{
 		length:    length,
-		data:      make([]float, length),
+		data:      make([]float64, length),
 		usesSStot: false,
 	}
 }
@@ -35,11 +35,11 @@ func (v *VectorXf) calculateSStot() {
 	for row_i := 0; row_i < v.length; row_i++ {
 		ySum += v.data[row_i]
 	}
-	yBar = ySum / length
+	yBar = ySum / float64(v.length)
 
 	// 2nd get SStot
 	v.SStot = 0
-	for row_i = 0; row_i < length; row_i++ {
+	for row_i := 0; row_i < v.length; row_i++ {
 		v.SStot += (v.data[row_i] - yBar) * (v.data[row_i] - yBar)
 	}
 

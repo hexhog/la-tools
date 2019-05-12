@@ -65,7 +65,7 @@ func NewLocatingArrayFromFile(filePath, factorDataFile string) *LocatingArray {
 	defer file.Close()
 
 	var (
-		tempData   int
+		// tempData   int
 		tempString string
 	)
 
@@ -96,7 +96,7 @@ func NewLocatingArrayFromFile(filePath, factorDataFile string) *LocatingArray {
 
 			l.t = 2
 
-			fmt.Printf("Tests %d Factors %d", l.tests, l.factors)
+			fmt.Printf("Tests %d Factors %d\n", l.tests, l.factors)
 
 			l.factorGrouping = make([]*GroupingInfo, l.factors)
 		} else if i == 2 {
@@ -114,7 +114,7 @@ func NewLocatingArrayFromFile(filePath, factorDataFile string) *LocatingArray {
 				l.factorGrouping[factor_i].levels = levels
 			}
 		} else if 3 <= i && i <= 2+l.factors {
-			factor_i := i
+			factor_i := i - 3
 			// load the grouping for the factors
 			words := strings.Fields(scanner.Text())
 
@@ -154,31 +154,30 @@ func NewLocatingArrayFromFile(filePath, factorDataFile string) *LocatingArray {
 				log.Fatal(err)
 			}
 			l.conGroups = make([]*ConstraintGroup, nConGroups)
-
+		//} else if len(l.conGroups) > 0 && i >= 4+l.factors && i < 4+l.factors+len(l.conGroups) {
+		} else if i >= 4+l.factors && i < 4+l.factors+len(l.conGroups) {
 			// load each constraint group
-			for iConGroup := 0; iConGroup < nConGroups; iConGroup++ {
+			for iConGroup := 0; iConGroup < len(l.conGroups); iConGroup++ {
 				words := []string{scanner.Text(), scanner.Text()}
 				l.conGroups[iConGroup] = newConstraintGroup(l, words)
 			}
-		} else {
+		} else if i >= 4+l.factors+len(l.conGroups) && i < 4+l.factors+len(l.conGroups)+l.tests {
 			// load the tests now
-			for test_i := 0; test_i < l.tests; test_i++ {
-				levelRow := make([]int, l.factors)
+			levelRow := make([]int, l.factors)
 
-				words := strings.Fields(scanner.Text())
+			words := strings.Fields(scanner.Text())
 
-				// now load each factor level for this specific test
-				for factor_i := 0; factor_i < l.factors; factor_i++ {
-					factor, err := strconv.Atoi(words[factor_i])
-					if err != nil {
-						log.Fatal(err)
-					}
-					levelRow[factor_i] = factor
+			// now load each factor level for this specific test
+			for factor_i := 0; factor_i < l.factors; factor_i++ {
+				factor, err := strconv.Atoi(words[factor_i])
+				if err != nil {
+					log.Fatal(err)
 				}
-
-				l.addLevelRow(levelRow)
-				l.tests--
+				levelRow[factor_i] = factor
 			}
+
+			l.addLevelRow(levelRow)
+			l.tests--
 		}
 		i++
 	}
