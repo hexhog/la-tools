@@ -2,6 +2,8 @@ package main
 
 import (
 	"bufio"
+	"bytes"
+	"encoding/binary"
 	"fmt"
 	"log"
 	"math"
@@ -13,6 +15,13 @@ import (
 
 const ENTRY_A = 1
 const ENTRY_B = -1
+
+type Entry int
+//
+//const (
+//	ENTRY_A   Entry = 1
+//	ENTRY_B Entry = -1
+//)
 
 type FactorSetting struct {
 	grouped       bool
@@ -34,8 +43,8 @@ type Path struct {
 }
 
 type CSCol struct {
-	dataVector []float64       // column data
-	dataP      []float64       // pointer to the 1st vector element
+	//dataVector []float64       // column data
+	dataP      []int       // pointer to the 1st vector element
 	factors    int             // number of contributing factors
 	setting    []FactorSetting // column headers
 	coverable  bool
@@ -181,13 +190,11 @@ func newCSMatrix(locatingArray *LocatingArray) *CSMatrix {
 }
 
 func (csm *CSMatrix) addArray(csCol *CSCol) {
-	csCol.dataVector = append(csCol.dataVector, 0)
-	csCol.dataP = csCol.dataVector
+	csCol.dataP = append(csCol.dataP, 0)
 }
 
 func (csm *CSMatrix) remArray(csCol *CSCol) {
-	csCol.dataVector = csCol.dataVector[:len(csCol.dataVector)-1]
-	csCol.dataP = csCol.dataVector
+	csCol.dataP = csCol.dataP[:len(csCol.dataP)-1]
 }
 
 func (csm *CSMatrix) addTWayInteractions(csColA *CSCol, colBMax_i int, col_i *int, t int,
@@ -329,7 +336,7 @@ func (csm *CSMatrix) populateColumnData(csCol *CSCol, levelMatrix [][]int, row_t
 		}
 
 		// add to sum of squares
-		sum += csCol.dataP[row_i] * csCol.dataP[row_i]
+		sum += float64(csCol.dataP[row_i] * csCol.dataP[row_i])
 	}
 
 	return sum
@@ -1131,7 +1138,7 @@ func (csm *CSMatrix) getDistanceToCol(col_i int, residuals []float64) float64 {
 	csCol := csm.data[col_i]
 
 	for row_i := 0; row_i < csm.rows; row_i++ {
-		subtractionResult = csCol.dataP[row_i] - residuals[row_i]
+		subtractionResult = float64(csCol.dataP[row_i]) - residuals[row_i]
 		distanceSum += subtractionResult * subtractionResult
 	}
 
@@ -1143,7 +1150,7 @@ func (csm *CSMatrix) getProductWithCol(col_i int, residuals []float64) float64 {
 	csCol := csm.data[col_i]
 
 	for row_i := 0; row_i < csm.rows; row_i++ {
-		dotSum += csCol.dataP[row_i] * residuals[row_i]
+		dotSum += float64(csCol.dataP[row_i]) * residuals[row_i]
 	}
 
 	return math.Abs(dotSum)
@@ -1220,7 +1227,7 @@ func (csm *CSMatrix) addOneWayInteraction(factor_i int, level_i int, levelMatrix
 		}
 
 		// add to sum of squares
-		sum += csCol.dataP[row_i] * csCol.dataP[row_i]
+		sum += float64(csCol.dataP[row_i] * csCol.dataP[row_i])
 	}
 
 	// push into vector
@@ -1282,9 +1289,8 @@ func (csm *CSMatrix) swapColumns(array []*CSCol, col_i1 int, col_i2 int) {
 }
 
 func (csm *CSMatrix) swapRows(array []*CSCol, row_i1 int, row_i2 int) {
-	var tempData float64
 	for col_i := 0; col_i < csm.getCols(); col_i++ {
-		tempData = array[col_i].dataP[row_i1]
+		tempData := array[col_i].dataP[row_i1]
 		array[col_i].dataP[row_i1] = array[col_i].dataP[row_i2]
 		array[col_i].dataP[row_i2] = tempData
 	}
@@ -1737,13 +1743,23 @@ func (csm *CSMatrix) quickSort(array []*CSCol, min int, max int, row_top int, ro
 	csm.quickSort(array, tempMin, max, row_top, row_len)
 }
 
+
+func intToBytes(i int) []byte {
+	b := make([]byte, 8)
+	binary.LittleEndian.PutUint32(b, uint32(i))
+	return b
+}
+
+
 func (csm *CSMatrix) compare(csCol1 *CSCol, csCol2 *CSCol, row_top int, row_len int) int {
 	for i := row_top; i < row_top+row_len; i++ {
-		if csCol1.dataP[row_top] == csCol2.dataP[row_top] {
+		a := intToBytes(csCol1.dataP[i])
+		b := intToBytes(csCol2.dataP[i])
+		if bytes.Compare(a, b) == 0 {
 			continue
-		} else if csCol1.dataP[row_top] < csCol2.dataP[row_top] {
+		} else if bytes.Compare(a, b) < 0 {
 			return -1
-		} else if csCol1.dataP[row_top] > csCol2.dataP[row_top] {
+		} else if bytes.Compare(a, b) > 0 {
 			return 1
 		}
 	}
@@ -2198,21 +2214,21 @@ func (csm *CSMatrix) getArrayScore(array []*CSCol) int64 {
 		// increment streak
 		streak++
 
-		if col_i== 300 {
-			fmt.Fprintln(w, "col1 ")
-			for i := 109 - 1; i >= 0; i-- {
-				fmt.Fprintf(w, "%v ", array[col_i].dataP[i])
-			}
-			fmt.Fprintf(w, "\n")
-			fmt.Fprintln(w, "col2 ")
-			for i := 109 - 1; i >= 0; i-- {
-				fmt.Fprintf(w, "%v ", array[col_i+1].dataP[i])
-			}
-			fmt.Fprintf(w, "\n")
-			fmt.Fprintln(w, "")
-
-			w.Flush()
-		}
+		//if col_i== 300 {
+		//	fmt.Fprintln(w, "col1 ")
+		//	for i := 109 - 1; i >= 0; i-- {
+		//		fmt.Fprintf(w, "%v ", array[col_i].dataP[i])
+		//	}
+		//	fmt.Fprintf(w, "\n")
+		//	fmt.Fprintln(w, "col2 ")
+		//	for i := 109 - 1; i >= 0; i-- {
+		//		fmt.Fprintf(w, "%v ", array[col_i+1].dataP[i])
+		//	}
+		//	fmt.Fprintf(w, "\n")
+		//	fmt.Fprintln(w, "")
+		//
+		//	w.Flush()
+		//}
 		// check if the streak ended
 		if csm.compare(array[col_i], array[col_i+1], 0, csm.rows) < 0 {
 			squaredSum += streak * streak
@@ -2220,9 +2236,11 @@ func (csm *CSMatrix) getArrayScore(array []*CSCol) int64 {
 		} else if csm.compare(array[col_i], array[col_i+1], 0, csm.rows) > 0 {
 			fmt.Println("Mistake in CS matrix at column: ", col_i)
 		} else {
-			//if csm.checkDistinguishable(array[col_i], array[col_i+1]) {
+			fmt.Fprintln(w, array[col_i].dataP)
+			fmt.Fprintln(w, array[col_i+1].dataP)
+			if csm.checkDistinguishable(array[col_i], array[col_i+1]) {
 			//	// cout << "Duplicates found: " << getColName(array[col_i]) << " vs " << getColName(array[col_i + 1]) << endl;
-			//}
+			}
 		}
 	}
 
@@ -2287,7 +2305,7 @@ func (csm *CSMatrix) writeResponse(responseDir string, responseCol string, terms
 		fmt.Println(coefficient, " * ", csm.getColName(csCol))
 
 		for row_i := 0; row_i < csm.rows; row_i++ {
-			responses[row_i] += coefficient * csCol.dataP[row_i]
+			responses[row_i] += coefficient * float64(csCol.dataP[row_i])
 		}
 	}
 

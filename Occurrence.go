@@ -8,7 +8,7 @@ type Occurrence struct {
 	list         []Occurrence
 }
 
-type ByCount []*Occurrence
+type ByCount []Occurrence
 
 func (bc ByCount) Len() int           { return len(bc) }
 func (bc ByCount) Less(i, j int) bool { return bc[i].count < bc[j].count }

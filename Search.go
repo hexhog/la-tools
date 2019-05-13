@@ -18,7 +18,7 @@ var workspace *WorkSpace // // static member of the class
 func loadResponseVector(response *VectorXf, directory string, column string, performLog bool, noise *Noise) {
 	// struct dirent *dp;
 
-	files, err := ioutil.ReadDir("directory")
+	files, err := ioutil.ReadDir(directory)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -60,8 +60,10 @@ func loadResponseVector(response *VectorXf, directory string, column string, per
 		col_i = -1 // this is the column index we are lookin for
 		for scanner.Scan() {
 			if i == 0 {
+				words := strings.Fields(scanner.Text())
+
 				// read the headers
-				tempInt, err = strconv.Atoi(scanner.Text())
+				tempInt, err = strconv.Atoi(words[0])
 				if err != nil {
 					log.Fatal(err)
 				}
@@ -82,7 +84,7 @@ func loadResponseVector(response *VectorXf, directory string, column string, per
 					}
 				}
 			} else if 2 <= i && i < 2+rows {
-				row_i := i
+				row_i := i-2
 
 				// ensure we found the relevant column
 				if col_i == -1 {
@@ -157,12 +159,16 @@ func compareOccurrence(first, second *Occurrence) bool {
 	return (first.count < second.count)
 }
 
-func allocateOccurrences(occurrence *Occurrence, t int, factors int, occurrenceLists *[][]*Occurrence) {
+func allocateOccurrences(occurrence *Occurrence, t int, factors int, occurrenceLists *[][]Occurrence) {
+
+	//fmt.Println(*occurrenceLists)
+	fmt.Println(occurrence.count, occurrence.factorList, occurrence.factorList_n, t, factors)
 
 	// no more factors or interactions to allocate for
 	if factors == 0 || t == 0 {
 		// occurrence.list = nil;
 		occurrence.list = nil
+		return
 		// return occurrenceLists
 	}
 
@@ -183,7 +189,7 @@ func allocateOccurrences(occurrence *Occurrence, t int, factors int, occurrenceL
 		occurrence.list[factor_i].factorList[occurrence.factorList_n] = factor_i
 
 		// push new occurrence into list
-		(*occurrenceLists)[occurrence.factorList_n] = append((*occurrenceLists)[occurrence.factorList_n], &occurrence.list[factor_i])
+		(*occurrenceLists)[occurrence.factorList_n] = append((*occurrenceLists)[occurrence.factorList_n], (occurrence.list)...)
 
 		// allocate the next dimension
 		allocateOccurrences(&occurrence.list[factor_i], t-1, factor_i, occurrenceLists)
@@ -381,15 +387,16 @@ func createModels(locatingArray *LocatingArray, response *VectorXf, csMatrix *CS
 	// delete[] colDetails;
 
 	// count occurrences
-	var occurrence *Occurrence
+	var occurrence = &Occurrence{}
 	occurrence.factorList = make([]int, 0)
 	occurrence.factorList_n = 0
 	occurrence.count = 0
 	occurrence.magnitude = 0
 	// list<Occurrence*> *occurrenceLists = new list<Occurrence*>[locatingArray->getT()];
-	occurrenceLists := make([][]*Occurrence, locatingArray.getT())
+	occurrenceLists := make([][]Occurrence, locatingArray.getT())
+	fmt.Println("Length ", len(occurrenceLists))
 	for i := range occurrenceLists {
-		occurrenceLists[i] = make([]*Occurrence, 0)
+		occurrenceLists[i] = make([]Occurrence, 0)
 	}
 	allocateOccurrences(occurrence, locatingArray.getT(), locatingArray.getFactors(), &occurrenceLists)
 
@@ -463,7 +470,8 @@ func createModels(locatingArray *LocatingArray, response *VectorXf, csMatrix *CS
 
 func main() {
 	//search([]string{"LA/LA_SMALL.tsv", "FD/Factors_SMALL.tsv"})
-	search([]string{"LA/LA_SMALL.tsv", "", "checkla", "1", "3"})
+	//search([]string{"LA/LA_SMALL.tsv", "", "checkla", "1", "3"})
+	search([]string{"LA/LA_SMALL.tsv", "FD/Factors_SMALL.tsv", "analysis", "RE/responses_SMALL", "MOS", "0", "11", "50", "50"})
 }
 
 func search(args []string) {

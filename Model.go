@@ -146,7 +146,8 @@ func (m *Model) printModelFactors() {
 		termIndex := pTermIndex.termIndex
 
 		// print out the factor names and level names
-		fmt.Println(m.coefVec[term_i+1], " | ", m.csMatrix.getColName(m.csMatrix.getCol(termIndex)))
+		fmt.Println(m.coefVec[term_i], " | ", m.csMatrix.getColName(m.csMatrix.getCol(termIndex)))
+		term_i++
 	}
 
 	// calculate adjusted r-squared (terms - 2 to not include the intercept)
@@ -180,7 +181,7 @@ func (m *Model) leastSquares() {
 		csCol = m.csMatrix.getCol(pTermIndex.termIndex)
 		// assign initial column A[col_i] to work vector
 		for row_i := 0; row_i < m.tests; row_i++ {
-			workSpace.workVec[row_i] = csCol.dataP[row_i]
+			workSpace.workVec[row_i] = float64(csCol.dataP[row_i])
 		}
 
 		// subtract appropriate other vectors
@@ -189,7 +190,7 @@ func (m *Model) leastSquares() {
 			// find the dot product of A[:][col_i] and Q[:][row_i]
 			dotProd = 0
 			for dotrow_i := 0; dotrow_i < m.tests; dotrow_i++ {
-				dotProd += csCol.dataP[dotrow_i] * workSpace.dataQ[dotrow_i][row_i]
+				dotProd += float64(csCol.dataP[dotrow_i]) * workSpace.dataQ[dotrow_i][row_i]
 			}
 
 			// assign the dot product to the R matrix
@@ -309,7 +310,7 @@ func (m *Model) leastSquares() {
 	for term_i := 0; term_i < m.terms; term_i++ {
 		csCol = m.csMatrix.getCol(pTermIndex.termIndex)
 		for row_i := 0; row_i < m.tests; row_i++ {
-			m.modelResponse[row_i] += csCol.dataP[row_i] * m.coefVec[term_i]
+			m.modelResponse[row_i] += float64(csCol.dataP[row_i]) * m.coefVec[term_i]
 		}
 		pTermIndex = pTermIndex.next
 	}
